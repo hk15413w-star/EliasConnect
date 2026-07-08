@@ -2,6 +2,8 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -18,53 +20,66 @@ app.UseDefaultFiles();
 app.UseStaticFiles();
 
 app.MapHub<ChatHub>("/chat");
-app.MapGet("/api/visitors", (VisitorTracker t) => t.GetAll());
+app.MapGet("/api/visitors", (VisitorTracker t) => Results.Ok(t.GetAll()));
 
 app.Run();
 
 public class ChatHub : Hub
 {
-    private readonly VisitorTracker _t;
-    private static readonly HashSet<string> _admins = new();
+    private readonly VisitorTracker _tracker;
+    private static readonly HashSet<string> _adminIds = new();
+    private static readonly object _lock = new();
 
-    public ChatHub(VisitorTracker t) => _t = t;
+    public ChatHub(VisitorTracker tracker) => _tracker = tracker;
 
     private string GetIp()
     {
         var ctx = Context.GetHttpContext();
-        if (ctx == null) return "Unknown";
+        if (ctx == null) return "0.0.0.0";
         var fwd = ctx.Request.Headers["X-Forwarded-For"].FirstOrDefault();
-        return !string.IsNullOrEmpty(fwd) ? fwd : ctx.Connection.RemoteIpAddress?.ToString() ?? "Unknown";
+        if (!string.IsNullOrEmpty(fwd)) return fwd.Split(',')[0].Trim();
+        var ip = ctx.Connection.RemoteIpAddress?.ToString();
+        if (ip == "::1") return "127.0.0.1";
+        return ip ?? "0.0.0.0";
+    }
+
+    private string HashDevice(string ip, string ua)
+    {
+        var raw = ip + "|" + (ua?.Length > 50 ? ua[..50] : ua ?? "");
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(raw));
+        return "Device-" + Convert.ToHexString(hash)[..6];
     }
 
     public override async Task OnConnectedAsync()
     {
         var ip = GetIp();
         var ua = Context.GetHttpContext()?.Request.Headers["User-Agent"].ToString() ?? "";
-        var deviceId = _t.Register(Context.ConnectionId, ip, ua);
+        var deviceId = HashDevice(ip, ua);
+        var cid = Context.ConnectionId;
+
+        _tracker.Register(cid, deviceId, ip, ua);
+
         await Clients.Caller.SendAsync("Init", ip, deviceId);
-        await Clients.Caller.SendAsync("History", _t.GetMessages());
-        if (_admins.Contains(Context.ConnectionId))
-            await Clients.Caller.SendAsync("AdminData", _t.GetAll());
-        await BroadcastToAdmins();
+        await Clients.Caller.SendAsync("History", _tracker.GetMessages());
+
         await base.OnConnectedAsync();
     }
 
     public override async Task OnDisconnectedAsync(Exception? ex)
     {
-        _t.Disconnect(Context.ConnectionId);
-        _admins.Remove(Context.ConnectionId);
-        await BroadcastToAdmins();
+        lock (_lock) { _adminIds.Remove(Context.ConnectionId); }
+        _tracker.SetOffline(Context.ConnectionId);
+        await NotifyAdmins();
         await base.OnDisconnectedAsync(ex);
     }
 
     public async Task SendMsg(string displayName, string message)
     {
-        var v = _t.GetByConnection(Context.ConnectionId);
+        var v = _tracker.Get(Context.ConnectionId);
         var deviceName = v?.DeviceName ?? "Unknown";
-        var isAdmin = _admins.Contains(Context.ConnectionId);
-        var finalName = isAdmin ? $"[ADMIN] {displayName}" : displayName;
-        _t.AddMessage(Context.ConnectionId, finalName, deviceName, message);
+        var isAdmin = _adminIds.Contains(Context.ConnectionId);
+        var finalName = isAdmin ? "[ADMIN] " + displayName : displayName;
+        _tracker.AddMessage(Context.ConnectionId, finalName, deviceName, message);
         await Clients.All.SendAsync("Msg", finalName, deviceName, message, DateTime.Now.ToString("HH:mm"));
     }
 
@@ -72,97 +87,85 @@ public class ChatHub : Hub
     {
         if (password == "elias2026")
         {
-            _admins.Add(Context.ConnectionId);
-            await Clients.Caller.SendAsync("AdminData", _t.GetAll());
+            lock (_lock) { _adminIds.Add(Context.ConnectionId); }
+            await NotifyAdmins();
             return true;
         }
         return false;
     }
 
-    public async Task Refresh()
-    {
-        if (_admins.Contains(Context.ConnectionId))
-            await Clients.Caller.SendAsync("AdminData", _t.GetAll());
-    }
-
     public async Task UpdateLoc(double lat, double lng, string info)
     {
-        _t.UpdateLocation(Context.ConnectionId, lat, lng, info);
-        await BroadcastToAdmins();
+        _tracker.SetLocation(Context.ConnectionId, lat, lng, info);
+        await NotifyAdmins();
     }
 
-    private async Task BroadcastToAdmins()
+    private async Task NotifyAdmins()
     {
-        var all = _t.GetAll();
-        foreach (var a in _admins)
-            await Clients.Client(a).SendAsync("AdminData", all);
+        var all = _tracker.GetAll();
+        List<string> admins;
+        lock (_lock) { admins = _adminIds.ToList(); }
+
+        foreach (var adminId in admins)
+        {
+            try
+            {
+                await Clients.Client(adminId).SendAsync("AdminData", all);
+            }
+            catch
+            {
+                lock (_lock) { _adminIds.Remove(adminId); }
+            }
+        }
     }
 }
 
 public class VisitorTracker
 {
-    private readonly ConcurrentDictionary<string, Visitor> _connections = new(); // connectionId -> visitor
-    private readonly ConcurrentDictionary<string, string> _deviceMap = new(); // deviceId -> connectionId
-    private readonly List<ChatMessage> _messages = new();
-    private int _counter;
+    private readonly ConcurrentDictionary<string, Visitor> _visitors = new();
 
-    public string Register(string connectionId, string ip, string ua)
+    public void Register(string cid, string deviceId, string ip, string ua)
     {
-        // Tạo deviceId dựa trên IP + UserAgent (định danh thiết bị)
-        var deviceId = Convert.ToBase64String(
-            System.Security.Cryptography.SHA256.HashData(
-                System.Text.Encoding.UTF8.GetBytes(ip + "|" + ua)
-            )
-        )[..12];
-
-        if (_deviceMap.TryGetValue(deviceId, out var existingConn))
+        var existing = _visitors.Values.FirstOrDefault(v => v.DeviceName == deviceId);
+        if (existing != null)
         {
-            // Thiết bị đã có -> giữ nguyên DeviceName, cập nhật connection mới
-            if (_connections.TryGetValue(existingConn, out var existingVisitor))
-            {
-                existingVisitor.ConnectionId = connectionId;
-                existingVisitor.Ip = ip;
-                existingVisitor.Online = true;
-                existingVisitor.ConnectedAt = DateTime.Now;
-                _connections.TryRemove(existingConn, out _);
-                _connections[connectionId] = existingVisitor;
-                _deviceMap[deviceId] = connectionId;
-                return existingVisitor.DeviceName;
-            }
+            existing.ConnectionId = cid;
+            existing.Ip = ip;
+            existing.Online = true;
+            existing.LastSeen = DateTime.Now;
+            _visitors.TryRemove(existing.ConnectionId, out _);
+            _visitors[cid] = existing;
         }
-
-        // Thiết bị mới
-        _counter++;
-        var name = "Device-" + _counter;
-        var visitor = new Visitor
+        else
         {
-            ConnectionId = connectionId,
-            DeviceName = name,
-            Ip = ip,
-            UserAgent = ua,
-            Online = true,
-            ConnectedAt = DateTime.Now
-        };
-        _connections[connectionId] = visitor;
-        _deviceMap[deviceId] = connectionId;
-        return name;
+            _visitors[cid] = new Visitor
+            {
+                ConnectionId = cid,
+                DeviceName = deviceId,
+                Ip = ip,
+                UserAgent = ua,
+                Online = true,
+                FirstSeen = DateTime.Now,
+                LastSeen = DateTime.Now
+            };
+        }
     }
 
-    public void Disconnect(string connectionId)
+    public Visitor? Get(string cid)
     {
-        if (_connections.TryGetValue(connectionId, out var v))
-            v.Online = false;
-    }
-
-    public Visitor? GetByConnection(string connectionId)
-    {
-        _connections.TryGetValue(connectionId, out var v);
+        _visitors.TryGetValue(cid, out var v);
         return v;
     }
 
-    public void UpdateLocation(string connectionId, double lat, double lng, string info)
+    public void SetOffline(string cid)
     {
-        if (_connections.TryGetValue(connectionId, out var v))
+        if (_visitors.TryGetValue(cid, out var v))
+            v.Online = false;
+    }
+
+    public void SetLocation(string cid, double lat, double lng, string info)
+    {
+        if (_visitors.TryGetValue(cid, out var v))
         {
             v.Lat = lat;
             v.Lng = lng;
@@ -170,20 +173,21 @@ public class VisitorTracker
         }
     }
 
-    public void AddMessage(string id, string displayName, string deviceName, string msg)
+    private readonly List<ChatMessage> _messages = new();
+
+    public void AddMessage(string cid, string user, string device, string msg)
     {
         _messages.Add(new ChatMessage
         {
-            ConnectionId = id,
-            User = displayName,
-            DeviceName = deviceName,
+            User = user,
+            DeviceName = device,
             Message = msg,
             Timestamp = DateTime.Now
         });
         if (_messages.Count > 500) _messages.RemoveAt(0);
     }
 
-    public List<Visitor> GetAll() => _connections.Values.OrderByDescending(x => x.ConnectedAt).ToList();
+    public List<Visitor> GetAll() => _visitors.Values.OrderByDescending(v => v.LastSeen).ToList();
     public List<ChatMessage> GetMessages() => _messages.ToList();
 }
 
@@ -197,12 +201,12 @@ public class Visitor
     public double Lng { get; set; }
     public string LocationInfo { get; set; } = "";
     public bool Online { get; set; }
-    public DateTime ConnectedAt { get; set; }
+    public DateTime FirstSeen { get; set; }
+    public DateTime LastSeen { get; set; }
 }
 
 public class ChatMessage
 {
-    public string ConnectionId { get; set; } = "";
     public string User { get; set; } = "";
     public string DeviceName { get; set; } = "";
     public string Message { get; set; } = "";
