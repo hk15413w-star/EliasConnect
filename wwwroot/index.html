@@ -89,6 +89,7 @@
 <script>
 var conn = new signalR.HubConnectionBuilder().withUrl("/chat").build();
 var isAdmin = false;
+var allVisitors = [];
 
 conn.start().then(function() {
     console.log("SignalR connected");
@@ -152,33 +153,42 @@ async function login() {
     if (!ok) { alert("Wrong password!"); return; }
     isAdmin = true;
     document.getElementById("loginbox").style.display = "none";
-    fetchVisitors(); // load ngay
+    fetchVisitors();
 }
 
 async function fetchVisitors() {
     try {
         var r = await fetch("/api/visitors");
-        var visitors = await r.json();
-        renderVisitors(visitors);
+        var data = await r.json();
+        console.log("Visitors loaded:", data);
+        allVisitors = data;
+        renderVisitors();
     } catch(e) { console.error(e); }
 }
 
-function renderVisitors(visitors) {
+function renderVisitors() {
     var list = document.getElementById("visitorList");
-    if (!visitors || visitors.length === 0) {
+    if (!allVisitors || allVisitors.length === 0) {
         list.innerHTML = '<div style="color:#555;font-size:.8rem;padding:20px;text-align:center">No visitors</div>';
         return;
     }
     var html = "";
-    for (var i = 0; i < visitors.length; i++) {
-        var v = visitors[i];
-        var timeStr = v.LastSeen ? new Date(v.LastSeen).toLocaleTimeString() : "?";
+    for (var i = 0; i < allVisitors.length; i++) {
+        var v = allVisitors[i];
+        var ip = v.lastIp || v.firstIp || "Unknown";
+        var device = v.deviceId || v.deviceName || "Unknown";
+        var timeStr = v.lastSeen ? new Date(v.lastSeen).toLocaleString() : "?";
+        var online = v.online;
+        var lat = v.lat;
+        var lng = v.lng;
+        var loc = v.locationInfo || "";
+
         html += '<div class="card">';
-        html += '<span class="dot ' + (v.Online ? "on" : "off") + '"></span>';
-        html += '<span class="devname">' + (v.DeviceId || "Unknown") + '</span><br>';
-        html += '<span class="ip">IP: ' + (v.LastIp || v.FirstIp || "Unknown") + '</span><br>';
-        if (v.LocationInfo) html += '<span class="loc">📍 ' + v.LocationInfo + '</span><br>';
-        if (v.Lat && v.Lng) html += '<span class="geo">GPS: ' + Number(v.Lat).toFixed(4) + ', ' + Number(v.Lng).toFixed(4) + '</span><br>';
+        html += '<span class="dot ' + (online ? "on" : "off") + '"></span>';
+        html += '<span class="devname">' + device + '</span><br>';
+        html += '<span class="ip">IP: ' + ip + '</span><br>';
+        if (loc) html += '<span class="loc">📍 ' + loc + '</span><br>';
+        if (lat && lng) html += '<span class="geo">GPS: ' + Number(lat).toFixed(4) + ', ' + Number(lng).toFixed(4) + '</span><br>';
         html += '<span class="time">' + timeStr + '</span>';
         html += '</div>';
     }
