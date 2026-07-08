@@ -6,192 +6,187 @@
     <title>Elias Connect</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.0/signalr.min.js"></script>
     <style>
-        * { margin:0; padding:0; box-sizing:border-box; }
-        body { background:#0a0a0f; color:#e0e0e0; font-family:'Segoe UI',sans-serif; height:100vh; display:flex; }
-        .sidebar { width:300px; min-width:300px; background:#12121a; padding:16px; border-right:1px solid #252535; overflow-y:auto; display:flex; flex-direction:column; gap:8px; }
-        .sidebar h2 { color:#50cd32; font-size:1rem; }
-        .card { background:#1a1a28; padding:10px 12px; border-radius:8px; font-size:0.78rem; border:1px solid #252535; margin-bottom:6px; }
-        .card .ip { color:#50cd32; font-weight:bold; }
-        .card .city { color:#aaa; }
-        .card .geo { color:#666; font-size:0.7rem; }
-        .card .time { color:#555; font-size:0.65rem; }
-        .myip { background:#1a1a28; padding:8px 12px; border-radius:6px; font-size:0.75rem; color:#aaa; }
-        .myip span { color:#50cd32; font-weight:bold; }
-        .login { background:#1a1a28; padding:12px; border-radius:8px; border:1px solid #333; }
-        .login input { width:100%; background:#0d0d15; border:1px solid #333; padding:10px; color:#fff; border-radius:6px; font-size:0.8rem; margin-bottom:8px; }
-        .login input:focus { outline:none; border-color:#50cd32; }
-        .login button { width:100%; background:#50cd32; color:#000; border:none; padding:10px; border-radius:6px; font-weight:bold; cursor:pointer; }
-        .main { flex:1; display:flex; flex-direction:column; min-width:0; }
-        .header { background:#12121a; padding:14px 16px; border-bottom:1px solid #252535; display:flex; justify-content:space-between; align-items:center; }
-        .header h1 { color:#50cd32; font-size:1.1rem; }
-        .messages { flex:1; padding:16px; overflow-y:auto; }
-        .msg { margin-bottom:10px; animation:fadeIn 0.3s; }
-        @keyframes fadeIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
-        .msg .user { font-weight:bold; font-size:0.8rem; }
-        .msg .user.admin { color:#ffaa00; }
-        .msg .user.normal { color:#50cd32; }
-        .msg .time { color:#555; font-size:0.65rem; margin-left:8px; }
-        .msg .text { color:#ddd; margin-top:3px; word-wrap:break-word; font-size:0.9rem; }
-        .input-area { background:#12121a; padding:12px 16px; border-top:1px solid #252535; display:flex; gap:8px; }
-        .input-area input { flex:1; background:#1a1a28; border:1px solid #333; padding:10px 12px; color:#fff; border-radius:8px; font-size:0.85rem; min-width:0; }
-        .input-area input:focus { outline:none; border-color:#50cd32; }
-        .input-area button { background:#50cd32; color:#000; border:none; padding:10px 16px; border-radius:8px; cursor:pointer; font-weight:bold; white-space:nowrap; font-size:0.85rem; }
-        .input-area button:hover { background:#60dd42; }
-        .dot { width:7px; height:7px; background:#50cd32; border-radius:50%; display:inline-block; margin-right:5px; }
-        .toggle-btn { display:none; background:#50cd32; color:#000; border:none; padding:6px 12px; border-radius:6px; font-size:0.8rem; cursor:pointer; font-weight:bold; }
-        .overlay { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:99; }
-        .overlay.show { display:block; }
-        .sidebar.mobile { display:flex !important; position:fixed; top:0; left:0; height:100%; z-index:100; width:280px; }
-        @media (max-width: 768px) {
-            .sidebar { display:none; }
-            .toggle-btn { display:block; }
-            .header h1 { font-size:1rem; }
-            .input-area { padding:10px; gap:6px; }
-            .input-area input { padding:8px 10px; font-size:0.8rem; }
-            .input-area button { padding:8px 12px; font-size:0.8rem; }
-            .messages { padding:12px; }
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{background:#0a0a0f;color:#e0e0e0;font-family:'Segoe UI',sans-serif;height:100vh;display:flex}
+        .sidebar{width:320px;min-width:320px;background:#12121a;padding:14px;border-right:1px solid #252535;overflow-y:auto;display:flex;flex-direction:column;gap:8px}
+        .sidebar h2{color:#50cd32;font-size:1rem}
+        .card{background:#1a1a28;padding:10px 12px;border-radius:8px;font-size:.75rem;border:1px solid #252535;margin-bottom:6px}
+        .card .device{color:#fff;font-weight:bold;font-size:.8rem}
+        .card .ip{color:#50cd32}
+        .card .location{color:#aaa;font-size:.7rem}
+        .card .geo{color:#666;font-size:.7rem}
+        .card .time{color:#555;font-size:.65rem}
+        .myip{background:#1a1a28;padding:8px 12px;border-radius:6px;font-size:.75rem;color:#aaa}
+        .myip span{color:#50cd32;font-weight:bold}
+        .login{background:#1a1a28;padding:12px;border-radius:8px;border:1px solid #333}
+        .login input{width:100%;background:#0d0d15;border:1px solid #333;padding:10px;color:#fff;border-radius:6px;font-size:.8rem;margin-bottom:8px}
+        .login input:focus{outline:none;border-color:#50cd32}
+        .login button{width:100%;background:#50cd32;color:#000;border:none;padding:10px;border-radius:6px;font-weight:bold;cursor:pointer}
+        .main{flex:1;display:flex;flex-direction:column;min-width:0}
+        .header{background:#12121a;padding:14px 16px;border-bottom:1px solid #252535;display:flex;justify-content:space-between;align-items:center}
+        .header h1{color:#50cd32;font-size:1.1rem}
+        .messages{flex:1;padding:16px;overflow-y:auto}
+        .msg{margin-bottom:10px;animation:fadeIn .3s}
+        @keyframes fadeIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+        .msg .uname{font-weight:bold;font-size:.8rem}
+        .msg .uname.admin{color:#ffaa00}
+        .msg .uname.normal{color:#50cd32}
+        .msg .devname{color:#555;font-size:.7rem;margin-left:6px}
+        .msg .time{color:#555;font-size:.65rem;margin-left:8px}
+        .msg .text{color:#ddd;margin-top:3px;word-wrap:break-word;font-size:.9rem}
+        .input-area{background:#12121a;padding:12px 16px;border-top:1px solid #252535;display:flex;gap:8px}
+        .input-area input{flex:1;background:#1a1a28;border:1px solid #333;padding:10px 12px;color:#fff;border-radius:8px;font-size:.85rem;min-width:0}
+        .input-area input:focus{outline:none;border-color:#50cd32}
+        .input-area button{background:#50cd32;color:#000;border:none;padding:10px 16px;border-radius:8px;cursor:pointer;font-weight:bold;white-space:nowrap;font-size:.85rem}
+        .input-area button:hover{background:#60dd42}
+        .dot{width:7px;height:7px;background:#50cd32;border-radius:50%;display:inline-block;margin-right:5px}
+        .toggle-btn{display:none;background:#50cd32;color:#000;border:none;padding:6px 12px;border-radius:6px;font-size:.8rem;cursor:pointer;font-weight:bold}
+        .overlay{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.7);z-index:99}
+        .overlay.show{display:block}
+        .sidebar.mobile{display:flex!important;position:fixed;top:0;left:0;height:100%;z-index:100;width:280px}
+        @media(max-width:768px){
+            .sidebar{display:none}
+            .toggle-btn{display:block}
+            .header h1{font-size:1rem}
+            .input-area{padding:10px;gap:6px}
+            .input-area input{padding:8px 10px;font-size:.8rem}
+            .input-area button{padding:8px 12px;font-size:.8rem}
+            .messages{padding:12px}
         }
     </style>
 </head>
 <body>
-    <div class="overlay" id="overlay" onclick="closeSidebar()"></div>
+<div class="overlay" id="overlay" onclick="closeSidebar()"></div>
 
-    <div class="sidebar" id="sidebar">
-        <h2>Visitors</h2>
-        <div class="myip">Your IP: <span id="myip">Loading...</span></div>
-        <div class="login" id="loginbox">
-            <input type="password" id="password" placeholder="Admin password..." onkeypress="if(event.key==='Enter')login()">
-            <button onclick="login()">Login</button>
-        </div>
-        <div id="visitorList">
-            <div style="color:#555;font-size:0.8rem;padding:20px;text-align:center;">Login to see visitors</div>
-        </div>
+<div class="sidebar" id="sidebar">
+    <h2>Visitors</h2>
+    <div class="myip">Your IP: <span id="myip">Loading...</span></div>
+    <div class="login" id="loginbox">
+        <input type="password" id="password" placeholder="Admin password..." onkeypress="if(event.key==='Enter')login()">
+        <button onclick="login()">Login</button>
     </div>
-
-    <div class="main">
-        <div class="header">
-            <h1>Elias Connect</h1>
-            <button class="toggle-btn" onclick="openSidebar()">Visitors</button>
-        </div>
-        <div class="messages" id="messages"></div>
-        <div class="input-area">
-            <input type="text" id="nameInput" placeholder="Name..." value="Guest" style="max-width:100px;">
-            <input type="text" id="msgInput" placeholder="Type a message..." onkeypress="if(event.key==='Enter')sendMessage()">
-            <button onclick="sendMessage()">Send</button>
-        </div>
+    <div id="visitorList">
+        <div style="color:#555;font-size:.8rem;padding:20px;text-align:center">Login to see visitors</div>
     </div>
+</div>
 
-    <script>
-        var connection = new signalR.HubConnectionBuilder().withUrl("/chat").build();
-        var isAdmin = false;
+<div class="main">
+    <div class="header">
+        <h1>Elias Connect</h1>
+        <button class="toggle-btn" onclick="openSidebar()">Visitors</button>
+    </div>
+    <div class="messages" id="messages"></div>
+    <div class="input-area">
+        <input type="text" id="nameInput" placeholder="Name..." value="Guest" style="max-width:100px">
+        <input type="text" id="msgInput" placeholder="Type a message..." onkeypress="if(event.key==='Enter')sendMsg()">
+        <button onclick="sendMsg()">Send</button>
+    </div>
+</div>
 
-        connection.start().then(function() {
-            console.log("Connected!");
-            getLocation();
-        }).catch(function(err) {
-            console.error(err);
-        });
+<script>
+var conn = new signalR.HubConnectionBuilder().withUrl("/chat").build();
+var isAdmin = false;
 
-        connection.on("MyIp", function(ip) {
-            document.getElementById("myip").textContent = ip || "Unknown";
-        });
+conn.start().then(function() {
+    if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(async function(p) {
+            var info = "";
+            try {
+                var r = await fetch("https://nominatim.openstreetmap.org/reverse?format=json&lat=" + p.coords.latitude + "&lon=" + p.coords.longitude);
+                var d = await r.json();
+                info = d.address ? (d.address.country||"") + ", " + (d.address.state||"") + ", " + (d.address.city||d.address.town||d.address.village||"") : "";
+            } catch(e) {}
+            conn.invoke("UpdateLoc", p.coords.latitude, p.coords.longitude, info);
+        }, function() {});
+    }
+});
 
-        connection.on("ReceiveMessage", function(user, msg, time) {
-            addMessage(user, msg, time);
-        });
+conn.on("Init", function(ip, deviceId) {
+    document.getElementById("myip").textContent = ip || "Unknown";
+});
 
-        connection.on("ChatHistory", function(history) {
-            if (history && history.length > 0) {
-                history.forEach(function(m) {
-                    addMessage(m.User, m.Message, new Date(m.Timestamp).toLocaleTimeString());
-                });
-            }
-        });
+conn.on("Msg", function(user, deviceName, msg, time) {
+    addMsg(user, deviceName, msg, time);
+});
 
-        connection.on("AdminLogin", function(visitors) {
-            isAdmin = true;
-            document.getElementById("loginbox").style.display = "none";
+conn.on("History", function(h) {
+    if (h) h.forEach(function(m) {
+        addMsg(m.User, m.DeviceName, m.Message, new Date(m.Timestamp).toLocaleTimeString());
+    });
+});
+
+conn.on("AdminData", function(visitors) {
+    isAdmin = true;
+    document.getElementById("loginbox").style.display = "none";
+    renderVisitors(visitors);
+});
+
+function addMsg(user, deviceName, msg, time) {
+    var div = document.createElement("div");
+    div.className = "msg";
+    var isAdminMsg = user.indexOf("[ADMIN]") === 0;
+    div.innerHTML =
+        '<span class="uname ' + (isAdminMsg ? "admin" : "normal") + '">' + user + '</span>' +
+        '<span class="devname">(' + (deviceName || "") + ')</span>' +
+        '<span class="time">' + time + '</span>' +
+        '<div class="text">' + msg + '</div>';
+    var c = document.getElementById("messages");
+    c.appendChild(div);
+    c.scrollTop = c.scrollHeight;
+}
+
+function sendMsg() {
+    var name = document.getElementById("nameInput").value || "Guest";
+    var msg = document.getElementById("msgInput").value;
+    if (!msg.trim()) return;
+    conn.invoke("SendMsg", name, msg);
+    document.getElementById("msgInput").value = "";
+}
+
+async function login() {
+    var pw = document.getElementById("password").value;
+    var ok = await conn.invoke("Login", pw);
+    if (!ok) alert("Wrong password!");
+}
+
+async function renderVisitors(visitors) {
+    var list = document.getElementById("visitorList");
+    if (!visitors || visitors.length === 0) {
+        list.innerHTML = '<div style="color:#555;font-size:.8rem;padding:20px;text-align:center">No visitors</div>';
+        return;
+    }
+    var html = "";
+    for (var i = 0; i < visitors.length; i++) {
+        var v = visitors[i];
+        html += '<div class="card">';
+        html += '<span class="dot"></span><span class="device">' + (v.DeviceName || "Unknown") + '</span><br>';
+        html += '<span class="ip">IP: ' + (v.Ip || "Unknown") + '</span><br>';
+        if (v.LocationInfo) html += '<span class="location">📍 ' + v.LocationInfo + '</span><br>';
+        if (v.Lat) html += '<span class="geo">GPS: ' + Number(v.Lat).toFixed(4) + ', ' + Number(v.Lng).toFixed(4) + '</span><br>';
+        html += '<span class="time">' + new Date(v.ConnectedAt).toLocaleTimeString() + '</span>';
+        html += '</div>';
+    }
+    list.innerHTML = html;
+}
+
+setInterval(async function() {
+    if (isAdmin) {
+        try {
+            var r = await fetch("/api/visitors");
+            var visitors = await r.json();
             renderVisitors(visitors);
-        });
+        } catch(e) {}
+    }
+}, 10000);
 
-        function addMessage(user, msg, time) {
-            var div = document.createElement("div");
-            div.className = "msg";
-            var isAdminMsg = user.indexOf("[ADMIN]") === 0;
-            var userClass = isAdminMsg ? "admin" : "normal";
-            div.innerHTML = '<span class="user ' + userClass + '">' + user + '</span><span class="time">' + time + '</span><div class="text">' + msg + '</div>';
-            var container = document.getElementById("messages");
-            container.appendChild(div);
-            container.scrollTop = container.scrollHeight;
-        }
-
-        function sendMessage() {
-            var name = document.getElementById("nameInput").value || "Guest";
-            var msg = document.getElementById("msgInput").value;
-            if (!msg.trim()) return;
-            connection.invoke("SendMessage", name, msg);
-            document.getElementById("msgInput").value = "";
-        }
-
-        async function login() {
-            var password = document.getElementById("password").value;
-            var result = await connection.invoke("Login", password);
-            if (!result) {
-                alert("Wrong password!");
-            }
-        }
-
-        function renderVisitors(visitors) {
-            var list = document.getElementById("visitorList");
-            if (!visitors || visitors.length === 0) {
-                list.innerHTML = '<div style="color:#555;font-size:0.8rem;padding:20px;text-align:center;">No visitors yet</div>';
-                return;
-            }
-            var html = "";
-            visitors.forEach(function(v) {
-                html += '<div class="card">';
-                html += '<span class="dot"></span><span class="ip">' + (v.Ip || "Unknown") + '</span><br>';
-                if (v.City) html += '<span class="city">' + v.City + '</span>';
-                if (v.Lat) html += '<div class="geo">' + Number(v.Lat).toFixed(4) + ', ' + Number(v.Lng).toFixed(4) + '</div>';
-                html += '<div class="time">' + new Date(v.ConnectedAt).toLocaleTimeString() + '</div>';
-                html += '</div>';
-            });
-            list.innerHTML = html;
-        }
-
-        function getLocation() {
-            if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition(async function(pos) {
-                    var city = "";
-                    try {
-                        var resp = await fetch("https://nominatim.openstreetmap.org/reverse?format=json&lat=" + pos.coords.latitude + "&lon=" + pos.coords.longitude);
-                        var data = await resp.json();
-                        city = data.address ? (data.address.city || data.address.town || data.address.village || "") : "";
-                    } catch(e) {}
-                    connection.invoke("UpdateLocation", pos.coords.latitude, pos.coords.longitude, city);
-                }, function() {});
-            }
-        }
-
-        setInterval(async function() {
-            if (isAdmin) {
-                try {
-                    var resp = await fetch("/api/visitors");
-                    var visitors = await resp.json();
-                    renderVisitors(visitors);
-                } catch(e) {}
-            }
-        }, 10000);
-
-        function openSidebar() {
-            document.getElementById("sidebar").classList.add("mobile");
-            document.getElementById("overlay").classList.add("show");
-        }
-
-        function closeSidebar() {
-            document.getElementById("sidebar").classList.remove("mobile");
-            document.getElementById("overlay").classList.remove("show");
-        }
-    </script>
+function openSidebar() {
+    document.getElementById("sidebar").classList.add("mobile");
+    document.getElementById("overlay").classList.add("show");
+}
+function closeSidebar() {
+    document.getElementById("sidebar").classList.remove("mobile");
+    document.getElementById("overlay").classList.remove("show");
+}
+</script>
 </body>
 </html>
