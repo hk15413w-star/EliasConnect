@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Elias Connect</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.0/signalr.min.js"></script>
+    <style>
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body { background:#0a0a0f; color:#e0e0e0; font-family:'Segoe UI',sans-serif; height:100vh; display:flex; }
+        .sidebar { width:320px; background:#12121a; padding:20px; border-right:1px solid #252535; overflow-y:auto; }
+        .sidebar h2 { color:#50cd32; font-size:1.1rem; margin-bottom:16px; }
+        .visitor-card { background:#1a1a28; padding:12px; border-radius:8px; margin-bottom:8px; font-size:0.8rem; border:1px solid #252535; }
+        .visitor-card .ip { color:#50cd32; font-weight:bold; }
+        .visitor-card .city { color:#aaa; }
+        .visitor-card .coords { color:#666; font-size:0.7rem; }
+        .main { flex:1; display:flex; flex-direction:column; }
+        .chat-header { background:#12121a; padding:16px 20px; border-bottom:1px solid #252535; }
+        .chat-header h1 { color:#50cd32; font-size:1.2rem; }
+        .chat-messages { flex:1; padding:20px; overflow-y:auto; }
+        .message { margin-bottom:12px; animation:fadeIn 0.3s; }
+        @keyframes fadeIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+        .message .user { color:#50cd32; font-weight:bold; font-size:0.85rem; }
+        .message .time { color:#555; font-size:0.7rem; margin-left:8px; }
+        .message .text { color:#ddd; margin-top:4px; word-wrap:break-word; }
+        .chat-input { background:#12121a; padding:16px 20px; border-top:1px solid #252535; display:flex; gap:10px; }
+        .chat-input input { flex:1; background:#1a1a28; border:1px solid #333; padding:12px; color:#fff; border-radius:8px; font-size:0.9rem; }
+        .chat-input input:focus { outline:none; border-color:#50cd32; }
+        .chat-input button { background:#50cd32; color:#000; border:none; padding:12px 20px; border-radius:8px; cursor:pointer; font-weight:bold; transition:0.2s; }
+        .chat-input button:hover { background:#60dd42; }
+        .online-dot { width:8px; height:8px; background:#50cd32; border-radius:50%; display:inline-block; margin-right:6px; }
+        #map { height:180px; border-radius:8px; margin-bottom:16px; background:#1a1a28; border:1px solid #252535; }
+        .no-location { color:#555; font-size:0.7rem; text-align:center; padding:20px; }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <h2>Visitors</h2>
+        <div id="map"><div class="no-location">Waiting for locations...</div></div>
+        <div id="visitorList">
+            <div class="visitor-card">
+                <span class="online-dot"></span>
+                <span class="ip">You</span> — <span class="city">Connected</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="main">
+        <div class="chat-header">
+            <h1>Elias Connect</h1>
+        </div>
+        <div class="chat-messages" id="messages"></div>
+        <div class="chat-input">
+            <input type="text" id="nameInput" placeholder="Your name..." value="Guest">
+            <input type="text" id="msgInput" placeholder="Type a message..." onkeypress="if(event.key==='Enter')sendMsg()">
+            <button onclick="sendMsg()">Send</button>
+        </div>
+    </div>
+
+    <script>
+        const connection = new signalR.HubConnectionBuilder()
+            .withUrl("/chat")
+            .build();
+
+        // Kết nối SignalR
+        connection.start().then(() => {
+            console.log("Connected!");
+            getLocation();
+            connection.invoke("GetChatHistory");
+        }).catch(err => console.error(err));
+
+        // Nhận tin nhắn mới
+        connection.on("ReceiveMessage", (user, msg, time) => {
+            appendMessage(user, msg, time);
+        });
+
+        // Nhận lịch sử chat
+        connection.on("ChatHistory", (history) => {
+            history.forEach(m => appendMessage(m.User, m.Message, 
+                new Date(m.Timestamp).toLocaleTimeString()));
+        });
+
+        // Cập nhật danh sách visitor
+        connection.on("UserConnected", () => updateVisitors());
+        connection.on("UserDisconnected", () => updateVisitors());
+        connection.on("LocationUpdated", () => updateVisitors());
+
+        function appendMessage(user, msg, time) {
+            const div = document.createElement('div');
+            div.className = 'message';
+            div.innerHTML = `<span class="user">${user}</span><span class="time">${time}</span><div class="text">${msg}</div>`;
+            document.getElementById('messages').appendChild(div);
+            document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
+        }
+
+        function sendMsg() {
+            const name = document.getElementById('nameInput').value || 'Guest';
+            const msg = document.getElementById('msgInput').value;
+            if (!msg.trim()) return;
+            connection.invoke("SendMessage", name, msg);
+            document.getElementById('msgInput').value = '';
+        }
+
+        async function updateVisitors() {
+            const resp = await fetch('/api/locations');
+            const visitors = await resp.json();
+            const list = document.getElementById('visitorList');
+            list.innerHTML = visitors.map(v => `
+                <div class="visitor-card">
+                    <span class="online-dot"></span>
+                    <span class="ip">${v.IpAddress}</span><br>
+                    <span class="city">${v.City || 'Unknown'}</span>
+                    ${v.Latitude ? `<div class="coords">${v.Latitude.toFixed(4)}, ${v.Longitude.toFixed(4)}</div>` : ''}
+                </div>
+            `).join('');
+        }
+
+        function getLocation() {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(async (pos) => {
+                    const city = await reverseGeocode(pos.coords.latitude, pos.coords.longitude);
+                    connection.invoke("UpdateLocation", pos.coords.latitude, pos.coords.longitude, city);
+                }, () => {
+                    console.log("Geolocation denied by user");
+                });
+            }
+        }
+
+        async function reverseGeocode(lat, lng) {
+            try {
+                const resp = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
+                const data = await resp.json();
+                return data.address?.city || data.address?.town || data.address?.village || 'Unknown';
+            } catch {
+                return 'Unknown';
+            }
+        }
+
+        setInterval(updateVisitors, 5000);
+    </script>
+</body>
+</html>

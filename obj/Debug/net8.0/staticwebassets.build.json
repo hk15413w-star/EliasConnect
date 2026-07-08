@@ -1,0 +1,39 @@
+{
+  "Version": 1,
+  "Hash": "W5q9siqXD2Rs3KLwe2Zs014/CTYP4JRiVBNXDYUgTDQ=",
+  "Source": "EliasConnect",
+  "BasePath": "_content/EliasConnect",
+  "Mode": "Default",
+  "ManifestType": "Build",
+  "ReferencedProjectsConfiguration": [],
+  "DiscoveryPatterns": [
+    {
+      "Name": "EliasConnect\\wwwroot",
+      "Source": "EliasConnect",
+      "ContentRoot": "C:\\Users\\DELL\\Documents\\EliasConnect\\wwwroot\\",
+      "BasePath": "_content/EliasConnect",
+      "Pattern": "**"
+    }
+  ],
+  "Assets": [
+    {
+      "Identity": "C:\\Users\\DELL\\Documents\\EliasConnect\\wwwroot\\index.html",
+      "SourceId": "EliasConnect",
+      "SourceType": "Discovered",
+      "ContentRoot": "C:\\Users\\DELL\\Documents\\EliasConnect\\wwwroot\\",
+      "BasePath": "_content/EliasConnect",
+      "RelativePath": "index.html",
+      "AssetKind": "All",
+      "AssetMode": "All",
+      "AssetRole": "Primary",
+      "AssetMergeBehavior": "PreferTarget",
+      "AssetMergeSource": "",
+      "RelatedAsset": "",
+      "AssetTraitName": "",
+      "AssetTraitValue": "",
+      "CopyToOutputDirectory": "Never",
+      "CopyToPublishDirectory": "PreserveNewest",
+      "OriginalItemSpec": "wwwroot\\index.html"
+    }
+  ]
+}
