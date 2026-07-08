@@ -129,16 +129,10 @@ public class ChatHub : Hub
         if (!_t.IsAdmin(Context.ConnectionId)) return;
         var adminDev = _t.GetByConnection(Context.ConnectionId);
         if (adminDev == null) return;
-
-        // Lưu session
         _t.StartPrivateSession(adminDev.DeviceId, targetDeviceId);
-
-        // Báo cho visitor
         var targetConn = _t.GetOnlineConnectionId(targetDeviceId);
         if (targetConn != null)
             await Clients.Client(targetConn).SendAsync("AdminStartedChat", adminDev.DisplayName);
-
-        // Gửi lịch sử cho admin
         var history = _t.GetPrivateMessages(adminDev.DeviceId, targetDeviceId);
         await Clients.Caller.SendAsync("PrivateOpened", targetDeviceId, history);
     }
@@ -149,10 +143,7 @@ public class ChatHub : Hub
         if (sender == null || !sender.IsAdmin) return;
         var senderName = $"[ADMIN] {sender.DisplayName}";
         _t.AddPrivateMessage(sender.DeviceId, targetDeviceId, senderName, msg);
-
-        // Gửi cho admin
         await Clients.Caller.SendAsync("PrivateMsg", targetDeviceId, senderName, msg, DateTime.Now.ToString("HH:mm"));
-        // Gửi cho visitor
         var targetConn = _t.GetOnlineConnectionId(targetDeviceId);
         if (targetConn != null)
             await Clients.Client(targetConn).SendAsync("PrivateMsg", sender.DeviceId, senderName, msg, DateTime.Now.ToString("HH:mm"));
@@ -164,13 +155,9 @@ public class ChatHub : Hub
         if (visitor == null || visitor.IsAdmin) return;
         var adminDeviceId = _t.GetPrivateAdmin(visitor.DeviceId);
         if (adminDeviceId == null) return;
-
         var senderName = visitor.DisplayName;
         _t.AddPrivateMessage(adminDeviceId, visitor.DeviceId, senderName, msg);
-
-        // Gửi cho visitor
         await Clients.Caller.SendAsync("PrivateMsg", adminDeviceId, senderName, msg, DateTime.Now.ToString("HH:mm"));
-        // Gửi cho admin
         var adminConn = _t.GetOnlineConnectionId(adminDeviceId);
         if (adminConn != null)
             await Clients.Client(adminConn).SendAsync("PrivateMsg", visitor.DeviceId, senderName, msg, DateTime.Now.ToString("HH:mm"));
@@ -209,7 +196,7 @@ public class VisitorTracker
     private readonly List<ChatMsg> _msg = new();
     private readonly object _l = new();
     private readonly IHttpClientFactory _hf;
-    private readonly ConcurrentDictionary<string, string> _sessions = new(); // adminDevId -> visitorDevId
+    private readonly ConcurrentDictionary<string, string> _sessions = new();
 
     public VisitorTracker(IHttpClientFactory hf) => _hf = hf;
 
@@ -219,15 +206,26 @@ public class VisitorTracker
         dev.LastIp = ip; dev.LastSeen = DateTime.Now; dev.Online = true; dev.UserAgent = ua;
         _c2d[cid] = did;
 
+        // IP Geolocation tự động - dùng ip-api.com (HTTPS)
         if (dev.Lat == 0 && ip != "127.0.0.1" && ip != "0.0.0.0")
         {
             try
             {
-                var c = _hf.CreateClient(); c.DefaultRequestHeaders.Add("User-Agent", "Elias/1.0");
-                var r = await c.GetStringAsync($"https://ipapi.co/{ip}/json/");
-                var d = JsonSerializer.Deserialize<IpapiResponse>(r);
-                if (d != null && !string.IsNullOrEmpty(d.country_name))
-                { dev.Lat = d.latitude; dev.Lng = d.longitude; dev.LocationInfo = $"{d.country_name}, {d.region}, {d.city}"; }
+                var c = _hf.CreateClient();
+                c.DefaultRequestHeaders.Add("User-Agent", "EliasConnect/1.0");
+                var r = await c.GetStringAsync($"https://ip-api.com/json/{ip}?fields=country,regionName,city,lat,lon");
+                var data = JsonSerializer.Deserialize<IpApiResponse>(r);
+                if (data != null && !string.IsNullOrEmpty(data.country))
+                {
+                    dev.Lat = data.lat;
+                    dev.Lng = data.lon;
+                    // Format: country, region, city
+                    var parts = new List<string>();
+                    if (!string.IsNullOrEmpty(data.country)) parts.Add(data.country);
+                    if (!string.IsNullOrEmpty(data.regionName)) parts.Add(data.regionName);
+                    if (!string.IsNullOrEmpty(data.city)) parts.Add(data.city);
+                    dev.LocationInfo = string.Join(", ", parts);
+                }
             }
             catch { }
         }
@@ -295,4 +293,4 @@ public class Device
 
 public class ChatMsg { public string User { get; set; } = ""; public string DeviceName { get; set; } = ""; public string Message { get; set; } = ""; public DateTime Timestamp { get; set; } }
 public class PrivateMsg { public string Sender { get; set; } = ""; public string Message { get; set; } = ""; public DateTime Timestamp { get; set; } }
-public class IpapiResponse { public string country_name { get; set; } = ""; public string region { get; set; } = ""; public string city { get; set; } = ""; public double latitude { get; set; } public double longitude { get; set; } }
+public class IpApiResponse { public string country { get; set; } = ""; public string regionName { get; set; } = ""; public string city { get; set; } = ""; public double lat { get; set; } public double lon { get; set; } }
