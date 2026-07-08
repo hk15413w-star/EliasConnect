@@ -27,7 +27,6 @@ app.MapGet("/api/visitors", (VisitorTracker t) => t.GetAll());
 
 app.Run();
 
-// ==================== CHAT HUB ====================
 public class ChatHub : Hub
 {
     private readonly VisitorTracker _tracker;
@@ -110,7 +109,6 @@ public class ChatHub : Hub
     }
 }
 
-// ==================== VISITOR TRACKER ====================
 public class VisitorTracker
 {
     private readonly ConcurrentDictionary<string, Device> _devices = new();
@@ -141,19 +139,19 @@ public class VisitorTracker
 
         _connToDevice[connectionId] = deviceId;
 
-        // Tự động tra IP → vị trí (không cần GPS permission)
         if (string.IsNullOrEmpty(device.LocationInfo) && ip != "127.0.0.1" && ip != "0.0.0.0")
         {
             try
             {
                 var client = _httpFactory.CreateClient();
-                var r = await client.GetStringAsync($"http://ip-api.com/json/{ip}?fields=country,regionName,city,lat,lon");
-                var data = JsonSerializer.Deserialize<IpInfo>(r);
-                if (data != null && data.Lat != 0)
+                client.DefaultRequestHeaders.Add("User-Agent", "EliasConnect/1.0");
+                var r = await client.GetStringAsync($"https://ipapi.co/{ip}/json/");
+                var data = JsonSerializer.Deserialize<IpapiResponse>(r);
+                if (data != null && !string.IsNullOrEmpty(data.Country))
                 {
-                    device.Lat = data.Lat;
-                    device.Lng = data.Lon;
-                    device.LocationInfo = $"{data.Country}, {data.RegionName}, {data.City}";
+                    device.Lat = data.Latitude;
+                    device.Lng = data.Longitude;
+                    device.LocationInfo = $"{data.Country}, {data.Region}, {data.City}";
                 }
             }
             catch { }
@@ -215,7 +213,6 @@ public class VisitorTracker
     public List<ChatMessage> GetMessages() { lock (_msgLock) return _messages.ToList(); }
 }
 
-// ==================== MODELS ====================
 public class Device
 {
     public string DeviceId { get; set; } = "";
@@ -240,11 +237,11 @@ public class ChatMessage
     public DateTime Timestamp { get; set; }
 }
 
-public class IpInfo
+public class IpapiResponse
 {
     public string Country { get; set; } = "";
-    public string RegionName { get; set; } = "";
+    public string Region { get; set; } = "";
     public string City { get; set; } = "";
-    public double Lat { get; set; }
-    public double Lon { get; set; }
+    public double Latitude { get; set; }
+    public double Longitude { get; set; }
 }
