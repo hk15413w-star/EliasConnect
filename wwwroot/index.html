@@ -15,6 +15,9 @@
         .card .ip{color:#50cd32}
         .card .location{color:#aaa;font-size:.7rem}
         .card .geo{color:#666;font-size:.7rem}
+        .card .status{font-size:.7rem;font-weight:bold}
+        .card .online{color:#50cd32}
+        .card .offline{color:#ff4444}
         .card .time{color:#555;font-size:.65rem}
         .myip{background:#1a1a28;padding:8px 12px;border-radius:6px;font-size:.75rem;color:#aaa}
         .myip span{color:#50cd32;font-weight:bold}
@@ -39,7 +42,6 @@
         .input-area input:focus{outline:none;border-color:#50cd32}
         .input-area button{background:#50cd32;color:#000;border:none;padding:10px 16px;border-radius:8px;cursor:pointer;font-weight:bold;white-space:nowrap;font-size:.85rem}
         .input-area button:hover{background:#60dd42}
-        .dot{width:7px;height:7px;background:#50cd32;border-radius:50%;display:inline-block;margin-right:5px}
         .toggle-btn{display:none;background:#50cd32;color:#000;border:none;padding:6px 12px;border-radius:6px;font-size:.8rem;cursor:pointer;font-weight:bold}
         .overlay{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.7);z-index:99}
         .overlay.show{display:block}
@@ -94,7 +96,9 @@ conn.start().then(function() {
             try {
                 var r = await fetch("https://nominatim.openstreetmap.org/reverse?format=json&lat=" + p.coords.latitude + "&lon=" + p.coords.longitude);
                 var d = await r.json();
-                info = d.address ? (d.address.country||"") + ", " + (d.address.state||"") + ", " + (d.address.city||d.address.town||d.address.village||"") : "";
+                if (d.address) {
+                    info = [d.address.country, d.address.state, d.address.city || d.address.town || d.address.village].filter(Boolean).join(", ");
+                }
             } catch(e) {}
             conn.invoke("UpdateLoc", p.coords.latitude, p.coords.longitude, info);
         }, function() {});
@@ -102,7 +106,7 @@ conn.start().then(function() {
 });
 
 conn.on("Init", function(ip, deviceId) {
-    document.getElementById("myip").textContent = ip || "Unknown";
+    document.getElementById("myip").textContent = (ip || "Unknown") + " | " + (deviceId || "");
 });
 
 conn.on("Msg", function(user, deviceName, msg, time) {
@@ -149,7 +153,7 @@ async function login() {
     if (!ok) alert("Wrong password!");
 }
 
-async function renderVisitors(visitors) {
+function renderVisitors(visitors) {
     var list = document.getElementById("visitorList");
     if (!visitors || visitors.length === 0) {
         list.innerHTML = '<div style="color:#555;font-size:.8rem;padding:20px;text-align:center">No visitors</div>';
@@ -159,7 +163,8 @@ async function renderVisitors(visitors) {
     for (var i = 0; i < visitors.length; i++) {
         var v = visitors[i];
         html += '<div class="card">';
-        html += '<span class="dot"></span><span class="device">' + (v.DeviceName || "Unknown") + '</span><br>';
+        html += '<span class="device">' + (v.DeviceName || "Unknown") + '</span> ';
+        html += '<span class="status ' + (v.Online ? "online" : "offline") + '">' + (v.Online ? "●" : "○") + '</span><br>';
         html += '<span class="ip">IP: ' + (v.Ip || "Unknown") + '</span><br>';
         if (v.LocationInfo) html += '<span class="location">📍 ' + v.LocationInfo + '</span><br>';
         if (v.Lat) html += '<span class="geo">GPS: ' + Number(v.Lat).toFixed(4) + ', ' + Number(v.Lng).toFixed(4) + '</span><br>';
