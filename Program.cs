@@ -105,9 +105,24 @@ public class ChatHub : Hub
 
     public Task UpdateLoc(double lat, double lng, string info)
     {
-        // Chỉ cập nhật nếu có dữ liệu GPS thực (info không rỗng)
         _tracker.SetLocation(Context.ConnectionId, lat, lng, info);
         return Task.CompletedTask;
+    }
+
+    // Admin: xóa toàn bộ visitor khỏi danh sách hiện tại
+    public async Task ClearAll()
+    {
+        if (!_tracker.IsAdmin(Context.ConnectionId)) return;
+        _tracker.ClearAll();
+        await Clients.Caller.SendAsync("AdminData", _tracker.GetAll());
+    }
+
+    // Admin: đặt biệt danh cho device
+    public async Task SetNickname(string deviceId, string nickname)
+    {
+        if (!_tracker.IsAdmin(Context.ConnectionId)) return;
+        _tracker.SetNickname(deviceId, nickname);
+        await Clients.Caller.SendAsync("AdminData", _tracker.GetAll());
     }
 }
 
@@ -116,6 +131,7 @@ public class VisitorTracker
 {
     private readonly ConcurrentDictionary<string, Device> _devices = new();
     private readonly ConcurrentDictionary<string, string> _connToDevice = new();
+    private readonly ConcurrentDictionary<string, string> _nicknames = new(); // deviceId -> nickname
     private readonly List<ChatMessage> _messages = new();
     private readonly object _msgLock = new();
     private readonly IHttpClientFactory _httpFactory;
@@ -192,6 +208,12 @@ public class VisitorTracker
         return null;
     }
 
+    public bool IsAdmin(string connectionId)
+    {
+        var device = GetByConnection(connectionId);
+        return device?.IsAdmin ?? false;
+    }
+
     public void SetAdmin(string connectionId, bool isAdmin)
     {
         var device = GetByConnection(connectionId);
@@ -200,9 +222,7 @@ public class VisitorTracker
 
     public void SetLocation(string connectionId, double lat, double lng, string info)
     {
-        // Chỉ ghi đè nếu có thông tin GPS thực tế (không rỗng)
         if (string.IsNullOrEmpty(info)) return;
-
         var device = GetByConnection(connectionId);
         if (device != null)
         {
@@ -227,7 +247,34 @@ public class VisitorTracker
         }
     }
 
-    public List<Device> GetAll() => _devices.Values.OrderByDescending(d => d.LastSeen).ToList();
+    // Xóa toàn bộ device (giữ nickname)
+    public void ClearAll()
+    {
+        _devices.Clear();
+        _connToDevice.Clear();
+        // Giữ nguyên _nicknames để dùng lại khi device kết nối lại
+    }
+
+    // Đặt biệt danh
+    public void SetNickname(string deviceId, string nickname)
+    {
+        if (string.IsNullOrWhiteSpace(nickname))
+            _nicknames.TryRemove(deviceId, out _);
+        else
+            _nicknames[deviceId] = nickname;
+    }
+
+    public List<Device> GetAll()
+    {
+        var devices = _devices.Values.OrderByDescending(d => d.LastSeen).ToList();
+        // Gán nickname nếu có
+        foreach (var device in devices)
+        {
+            device.Nickname = _nicknames.TryGetValue(device.DeviceId, out var nick) ? nick : "";
+        }
+        return devices;
+    }
+
     public List<ChatMessage> GetMessages() { lock (_msgLock) return _messages.ToList(); }
 }
 
@@ -246,6 +293,7 @@ public class Device
     public DateTime FirstSeen { get; set; }
     public DateTime LastSeen { get; set; }
     public string DeviceName => DeviceId;
+    public string Nickname { get; set; } = ""; // Sẽ được gán khi GetAll()
 }
 
 public class ChatMessage

@@ -8,14 +8,17 @@
     <style>
         *{margin:0;padding:0;box-sizing:border-box}
         body{background:#0a0a0f;color:#e0e0e0;font-family:'Segoe UI',sans-serif;height:100vh;display:flex}
-        .sidebar{width:320px;min-width:320px;background:#12121a;padding:14px;border-right:1px solid #252535;overflow-y:auto;display:flex;flex-direction:column;gap:8px}
+        .sidebar{width:340px;min-width:340px;background:#12121a;padding:14px;border-right:1px solid #252535;overflow-y:auto;display:flex;flex-direction:column;gap:8px}
         .sidebar h2{color:#50cd32;font-size:1rem}
-        .card{background:#1a1a28;padding:10px 12px;border-radius:8px;font-size:.75rem;border:1px solid #252535;margin-bottom:6px}
+        .card{background:#1a1a28;padding:10px 12px;border-radius:8px;font-size:.75rem;border:1px solid #252535;margin-bottom:6px;position:relative}
         .card .devname{color:#fff;font-weight:bold;font-size:.8rem}
         .card .ip{color:#50cd32}
         .card .loc{color:#aaa;font-size:.7rem}
         .card .geo{color:#666;font-size:.7rem}
         .card .time{color:#555;font-size:.65rem}
+        .card .nick-input{display:flex;gap:4px;margin-top:4px}
+        .card .nick-input input{flex:1;background:#0d0d15;border:1px solid #333;color:#fff;padding:4px 6px;border-radius:4px;font-size:.7rem}
+        .card .nick-input button{background:#50cd32;color:#000;border:none;padding:4px 8px;border-radius:4px;font-size:.7rem;cursor:pointer}
         .dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:5px}
         .dot.on{background:#50cd32}
         .dot.off{background:#555}
@@ -25,6 +28,7 @@
         .login input{width:100%;background:#0d0d15;border:1px solid #333;padding:10px;color:#fff;border-radius:6px;font-size:.8rem;margin-bottom:8px}
         .login input:focus{outline:none;border-color:#50cd32}
         .login button{width:100%;background:#50cd32;color:#000;border:none;padding:10px;border-radius:6px;font-weight:bold;cursor:pointer}
+        .btn-clear{background:#ff4444;color:#fff;border:none;padding:8px;border-radius:6px;cursor:pointer;font-weight:bold;margin-top:4px}
         .main{flex:1;display:flex;flex-direction:column;min-width:0}
         .header{background:#12121a;padding:14px 16px;border-bottom:1px solid #252535;display:flex;justify-content:space-between;align-items:center}
         .header h1{color:#50cd32;font-size:1.1rem}
@@ -45,7 +49,7 @@
         .toggle-btn{display:none;background:#50cd32;color:#000;border:none;padding:6px 12px;border-radius:6px;font-size:.8rem;cursor:pointer;font-weight:bold}
         .overlay{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.7);z-index:99}
         .overlay.show{display:block}
-        .sidebar.mobile{display:flex!important;position:fixed;top:0;left:0;height:100%;z-index:100;width:280px}
+        .sidebar.mobile{display:flex!important;position:fixed;top:0;left:0;height:100%;z-index:100;width:300px}
         @media(max-width:768px){
             .sidebar{display:none}
             .toggle-btn{display:block}
@@ -68,6 +72,7 @@
         <input type="password" id="password" placeholder="Admin password..." onkeypress="if(event.key==='Enter')login()">
         <button onclick="login()">Login</button>
     </div>
+    <button class="btn-clear" id="clearAllBtn" style="display:none" onclick="clearAll()">Clear All Visitors</button>
     <div id="visitorList">
         <div style="color:#555;font-size:.8rem;padding:20px;text-align:center">Login to see visitors</div>
     </div>
@@ -125,6 +130,10 @@ conn.on("History", function(h) {
     }
 });
 
+conn.on("AdminData", function(visitors) {
+    renderVisitors(visitors);
+});
+
 function addMsg(user, deviceName, msg, time) {
     var div = document.createElement("div");
     div.className = "msg";
@@ -153,6 +162,7 @@ async function login() {
     if (!ok) { alert("Wrong password!"); return; }
     isAdmin = true;
     document.getElementById("loginbox").style.display = "none";
+    document.getElementById("clearAllBtn").style.display = "block";
     fetchVisitors();
 }
 
@@ -161,14 +171,14 @@ async function fetchVisitors() {
         var r = await fetch("/api/visitors");
         var data = await r.json();
         console.log("Visitors loaded:", data);
-        allVisitors = data;
-        renderVisitors();
+        renderVisitors(data);
     } catch(e) { console.error(e); }
 }
 
-function renderVisitors() {
+function renderVisitors(visitors) {
+    allVisitors = visitors || [];
     var list = document.getElementById("visitorList");
-    if (!allVisitors || allVisitors.length === 0) {
+    if (!allVisitors.length) {
         list.innerHTML = '<div style="color:#555;font-size:.8rem;padding:20px;text-align:center">No visitors</div>';
         return;
     }
@@ -176,7 +186,7 @@ function renderVisitors() {
     for (var i = 0; i < allVisitors.length; i++) {
         var v = allVisitors[i];
         var ip = v.lastIp || v.firstIp || "Unknown";
-        var device = v.deviceId || v.deviceName || "Unknown";
+        var displayName = v.nickname || v.deviceId || v.deviceName || "Unknown";
         var timeStr = v.lastSeen ? new Date(v.lastSeen).toLocaleString() : "?";
         var online = v.online;
         var lat = v.lat;
@@ -185,7 +195,14 @@ function renderVisitors() {
 
         html += '<div class="card">';
         html += '<span class="dot ' + (online ? "on" : "off") + '"></span>';
-        html += '<span class="devname">' + device + '</span><br>';
+        html += '<span class="devname">' + displayName + '</span>';
+        // Nickname input (only admin)
+        if (isAdmin) {
+            html += '<div class="nick-input">';
+            html += '<input type="text" placeholder="Nickname" id="nick-' + v.deviceId + '" value="' + (v.nickname || '') + '">';
+            html += '<button onclick="setNickname(\'' + v.deviceId + '\')">Set</button>';
+            html += '</div>';
+        }
         html += '<span class="ip">IP: ' + ip + '</span><br>';
         if (loc) html += '<span class="loc">📍 ' + loc + '</span><br>';
         if (lat && lng) html += '<span class="geo">GPS: ' + Number(lat).toFixed(4) + ', ' + Number(lng).toFixed(4) + '</span><br>';
@@ -193,6 +210,20 @@ function renderVisitors() {
         html += '</div>';
     }
     list.innerHTML = html;
+}
+
+async function setNickname(deviceId) {
+    var input = document.getElementById("nick-" + deviceId);
+    var nickname = input.value.trim();
+    await conn.invoke("SetNickname", deviceId, nickname);
+    // Refresh list
+    fetchVisitors();
+}
+
+async function clearAll() {
+    if (!confirm("Xóa toàn bộ visitor hiện tại? Họ sẽ xuất hiện lại khi tải lại trang.")) return;
+    await conn.invoke("ClearAll");
+    // List will be updated via AdminData callback
 }
 
 setInterval(function() {
