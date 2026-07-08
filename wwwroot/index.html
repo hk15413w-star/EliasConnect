@@ -19,12 +19,8 @@
         .card .actions{display:flex;gap:4px;margin-top:4px;flex-wrap:wrap}
         .card .actions button{padding:3px 8px;font-size:.65rem;border:1px solid #50cd32;background:transparent;color:#50cd32;border-radius:4px;cursor:pointer}
         .card .actions button.danger{border-color:#ff4444;color:#ff4444}
-        .card .nick-input{display:flex;gap:4px;margin-top:4px}
-        .card .nick-input input{flex:1;background:#0d0d15;border:1px solid #333;color:#fff;padding:4px 6px;border-radius:4px;font-size:.7rem}
-        .card .nick-input button{background:#50cd32;color:#000;border:none;padding:4px 8px;border-radius:4px;font-size:.7rem;cursor:pointer}
         .dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:5px}
-        .dot.on{background:#50cd32}
-        .dot.off{background:#555}
+        .dot.on{background:#50cd32}.dot.off{background:#555}
         .mybox{background:#1a1a28;padding:8px 12px;border-radius:6px;font-size:.75rem;color:#aaa}
         .mybox span{color:#50cd32;font-weight:bold}
         .login{background:#1a1a28;padding:12px;border-radius:8px;border:1px solid #333}
@@ -42,30 +38,21 @@
         .msg{margin-bottom:10px;animation:fadeIn .3s}
         @keyframes fadeIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
         .msg .uname{font-weight:bold;font-size:.8rem}
-        .msg .uname.admin{color:#ffaa00}
-        .msg .uname.normal{color:#50cd32}
+        .msg .uname.admin{color:#ffaa00}.msg .uname.normal{color:#50cd32}
         .msg .time{color:#555;font-size:.65rem;margin-left:8px}
         .msg .text{color:#ddd;margin-top:3px;word-wrap:break-word;font-size:.9rem}
+        .private-bar{display:flex;align-items:center;gap:8px;padding:8px 16px;background:#12121a;border-bottom:1px solid #252535}
+        .private-bar select{flex:1;background:#1a1a28;color:#fff;border:1px solid #333;padding:8px;border-radius:6px}
+        .private-bar button{background:#ff4444;color:#fff;border:none;padding:6px 12px;border-radius:4px;cursor:pointer;font-size:.75rem}
         .input-area{background:#12121a;padding:12px 16px;border-top:1px solid #252535;display:flex;gap:8px}
         .input-area input{flex:1;background:#1a1a28;border:1px solid #333;padding:10px 12px;color:#fff;border-radius:8px;font-size:.85rem;min-width:0}
         .input-area input:focus{outline:none;border-color:#50cd32}
         .input-area button{background:#50cd32;color:#000;border:none;padding:10px 16px;border-radius:8px;cursor:pointer;font-weight:bold;white-space:nowrap;font-size:.85rem}
-        .input-area button:hover{background:#60dd42}
-        .private-info{background:#1a1a28;padding:8px 12px;margin:0 16px 8px;border-radius:6px;font-size:.8rem;color:#aaa}
-        .private-info span{color:#50cd32;font-weight:bold}
         .toggle-btn{display:none;background:#50cd32;color:#000;border:none;padding:6px 12px;border-radius:6px;font-size:.8rem;cursor:pointer;font-weight:bold}
         .overlay{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.7);z-index:99}
         .overlay.show{display:block}
         .sidebar.mobile{display:flex!important;position:fixed;top:0;left:0;height:100%;z-index:100;width:300px}
-        @media(max-width:768px){
-            .sidebar{display:none}
-            .toggle-btn{display:block}
-            .header h1{font-size:1rem}
-            .input-area{padding:10px;gap:6px}
-            .input-area input{padding:8px 10px;font-size:.8rem}
-            .input-area button{padding:8px 12px;font-size:.8rem}
-            .messages{padding:12px}
-        }
+        @media(max-width:768px){.sidebar{display:none}.toggle-btn{display:block}}
     </style>
 </head>
 <body>
@@ -79,10 +66,8 @@
         <input type="password" id="password" placeholder="Admin password..." onkeypress="if(event.key==='Enter')login()">
         <button onclick="login()">Login</button>
     </div>
-    <button class="btn-clear" id="clearAllBtn" style="display:none" onclick="clearAll()">Clear All Visitors</button>
-    <div id="visitorList">
-        <div style="color:#555;font-size:.8rem;padding:20px;text-align:center">Login to see visitors</div>
-    </div>
+    <button class="btn-clear" id="clearAllBtn" style="display:none" onclick="clearAll()">Clear All</button>
+    <div id="visitorList"><div style="color:#555;font-size:.8rem;padding:20px;text-align:center">Login to see visitors</div></div>
 </div>
 
 <div class="main">
@@ -91,242 +76,92 @@
         <button class="toggle-btn" onclick="openSidebar()">Visitors</button>
     </div>
     <div class="tabs">
-        <div class="tab active" id="tabPublic" onclick="switchTab('public')">Public Chat</div>
-        <div class="tab" id="tabPrivate" style="display:none" onclick="switchTab('private')">Private Chat</div>
+        <div class="tab active" id="tabPublic" onclick="switchTab('public')">Public</div>
+        <div class="tab" id="tabPrivate" style="display:none" onclick="switchTab('private')">Admin Chat</div>
     </div>
-    <div class="private-info" id="privateInfo" style="display:none">
-        Chatting with: <span id="privatePartner"></span>
-        <button onclick="endPrivateChat()" style="margin-left:10px;background:#ff4444;color:#fff;border:none;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:.7rem">End</button>
+    <div class="private-bar" id="privateBar" style="display:none">
+        <span style="color:#aaa;font-size:.8rem">Chat with:</span>
+        <select id="privateSelect" onchange="onPrivateSelect()"><option value="">-- Select --</option></select>
+        <button onclick="endPrivateChat()">End</button>
     </div>
     <div class="messages" id="messages"></div>
-    <div class="input-area" id="inputArea">
+    <div class="input-area">
         <input type="text" id="nameInput" placeholder="Name..." value="Guest" style="max-width:100px">
-        <input type="text" id="msgInput" placeholder="Type a message..." onkeypress="if(event.key==='Enter')sendMsg()">
+        <input type="text" id="msgInput" placeholder="Message..." onkeypress="if(event.key==='Enter')sendMsg()">
         <button onclick="sendMsg()">Send</button>
     </div>
 </div>
 
 <script>
 var conn = new signalR.HubConnectionBuilder().withUrl("/chat").build();
-var isAdmin = false;
-var myDeviceId = "";
+var isAdmin = false, myDeviceId = "", currentTab = 'public', activePrivateTarget = null;
+var privateCache = {}; // deviceId -> [{sender, msg, time}]
 var allVisitors = [];
-var currentTab = 'public';
-var privateTargetId = null; // deviceId đang chat riêng (với admin) hoặc adminDeviceId (với visitor)
-var privateMessagesCache = {}; // deviceId -> array
 
 conn.start().then(function() {
-    console.log("SignalR connected");
-    if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(async function(p) {
-            var info = "";
-            try {
-                var r = await fetch("https://nominatim.openstreetmap.org/reverse?format=json&lat=" + p.coords.latitude + "&lon=" + p.coords.longitude);
-                var d = await r.json();
-                if (d.address) {
-                    info = [d.address.country, d.address.state, d.address.city || d.address.town || d.address.village].filter(Boolean).join(", ");
-                }
-            } catch(e) {}
-            conn.invoke("UpdateLoc", p.coords.latitude, p.coords.longitude, info);
-        }, function() { console.log("Geolocation denied"); });
-    }
-}).catch(function(err) { console.error(err); });
-
-conn.on("Init", function(ip, deviceId) {
-    document.getElementById("myip").textContent = ip || "Unknown";
-    document.getElementById("mydevice").textContent = deviceId || "Unknown";
-    myDeviceId = deviceId;
+    if (navigator.geolocation) navigator.geolocation.getCurrentPosition(async p => {
+        var info = "";
+        try { var r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${p.coords.latitude}&lon=${p.coords.longitude}`);
+              var d = await r.json(); if(d.address) info = [d.address.country,d.address.state,d.address.city||d.address.town].filter(Boolean).join(", "); } catch {}
+        conn.invoke("UpdateLoc", p.coords.latitude, p.coords.longitude, info);
+    }, ()=>{});
 });
 
-// --- Public chat ---
-conn.on("Msg", function(user, deviceName, msg, time) {
-    if (currentTab === 'public') addPublicMsg(user, msg, time);
+conn.on("Init", (ip, did) => { document.getElementById("myip").textContent=ip||"Unknown"; document.getElementById("mydevice").textContent=did||"Unknown"; myDeviceId=did; });
+conn.on("Msg", (u,dn,m,t) => { if(currentTab==='public') addMsg(u,m,t); });
+conn.on("History", h => { if(h && currentTab==='public') h.forEach(m => addMsg(m.User, m.Message, new Date(m.Timestamp).toLocaleTimeString())); });
+conn.on("AdminData", v => { allVisitors=v; renderVisitors(v); });
+conn.on("PrivateOpened", (targetId, history) => {
+    openPrivateTab(targetId);
+    document.getElementById("messages").innerHTML = '';
+    if(history) history.forEach(m => addPrivateMsg(m.Sender, m.Message, new Date(m.Timestamp).toLocaleTimeString()));
 });
-
-conn.on("History", function(h) {
-    if (h && h.length && currentTab === 'public') {
-        h.forEach(m => addPublicMsg(m.User, m.Message, new Date(m.Timestamp).toLocaleTimeString()));
-    }
-});
-
-function addPublicMsg(user, msg, time) {
-    var div = document.createElement("div");
-    div.className = "msg";
-    var isAdminMsg = user.indexOf("[ADMIN]") === 0;
-    div.innerHTML = `<span class="uname ${isAdminMsg?'admin':'normal'}">${user}</span><span class="time">${time}</span><div class="text">${msg}</div>`;
-    document.getElementById("messages").appendChild(div);
-    document.getElementById("messages").scrollTop = document.getElementById("messages").scrollHeight;
-}
-
-// --- Private chat ---
-conn.on("PrivateChatStarted", function(adminDeviceId, adminNickname) {
-    // Visitor nhận được yêu cầu chat riêng từ admin
-    if (isAdmin) return;
-    privateTargetId = adminDeviceId;
+conn.on("AdminStartedChat", (adminName) => {
+    if(isAdmin) return;
     document.getElementById("tabPrivate").style.display = 'inline-block';
-    document.getElementById("privatePartner").textContent = adminNickname || adminDeviceId;
-    document.getElementById("privateInfo").style.display = 'block';
+    activePrivateTarget = adminName;
     switchTab('private');
-    // Tải lịch sử private
-    conn.invoke("GetPrivateHistory", myDeviceId);
+});
+conn.on("PrivateMsg", (targetId, sender, msg, time) => {
+    if(!privateCache[targetId]) privateCache[targetId]=[];
+    privateCache[targetId].push({sender,msg,time});
+    if(currentTab==='private' && (activePrivateTarget===targetId || activePrivateTarget===sender))
+        addPrivateMsg(sender, msg, time);
+});
+conn.on("PrivateEnded", () => {
+    activePrivateTarget=null; document.getElementById("privateBar").style.display='none';
+    if(currentTab==='private') switchTab('public');
 });
 
-conn.on("PrivateChatOpened", function(deviceId, history) {
-    // Admin nhận xác nhận đã mở private chat
-    privateTargetId = deviceId;
-    document.getElementById("privatePartner").textContent = deviceId;
-    document.getElementById("privateInfo").style.display = 'block';
-    document.getElementById("messages").innerHTML = '';
-    if (history && history.length) {
-        history.forEach(m => addPrivateMsg(m.Sender, m.Message, new Date(m.Timestamp).toLocaleTimeString()));
-    }
-});
-
-conn.on("PrivateMsg", function(sender, msg, time) {
-    if (currentTab === 'private') addPrivateMsg(sender, msg, time);
-    // Lưu cache
-    if (!privateMessagesCache[privateTargetId]) privateMessagesCache[privateTargetId] = [];
-    privateMessagesCache[privateTargetId].push({sender, msg, time});
-});
-
-conn.on("PrivateChatEnded", function() {
-    privateTargetId = null;
-    document.getElementById("privateInfo").style.display = 'none';
-    if (currentTab === 'private') switchTab('public');
-    if (!isAdmin) document.getElementById("tabPrivate").style.display = 'none';
-});
-
-conn.on("AdminData", function(visitors) {
-    allVisitors = visitors;
-    renderVisitors(visitors);
-});
-
-function addPrivateMsg(sender, msg, time) {
-    var div = document.createElement("div");
-    div.className = "msg";
-    div.innerHTML = `<span class="uname admin">${sender}</span><span class="time">${time} (private)</span><div class="text">${msg}</div>`;
-    document.getElementById("messages").appendChild(div);
-    document.getElementById("messages").scrollTop = document.getElementById("messages").scrollHeight;
-}
-
-function switchTab(tab) {
-    currentTab = tab;
-    document.getElementById("tabPublic").classList.remove("active");
-    document.getElementById("tabPrivate").classList.remove("active");
-    document.getElementById("messages").innerHTML = '';
-    if (tab === 'public') {
-        document.getElementById("tabPublic").classList.add("active");
-        conn.invoke("GetChatHistory");
-    } else {
-        document.getElementById("tabPrivate").classList.add("active");
-        // Hiển thị lịch sử cache
-        var cache = privateMessagesCache[privateTargetId] || [];
-        cache.forEach(m => addPrivateMsg(m.sender, m.msg, m.time));
-    }
-}
-
-// Gửi tin nhắn (public hoặc private)
-function sendMsg() {
-    var msg = document.getElementById("msgInput").value.trim();
-    if (!msg) return;
-    if (currentTab === 'private' && privateTargetId) {
-        if (isAdmin) conn.invoke("SendPrivateMessage", msg);
-        else conn.invoke("SendPrivateMessageToAdmin", msg);
-    } else {
-        var name = document.getElementById("nameInput").value || "Guest";
-        conn.invoke("SendMsg", name, msg);
-    }
-    document.getElementById("msgInput").value = "";
-}
-
-// Admin: bắt đầu chat riêng với visitor
-function startPrivateChat(deviceId) {
-    if (!isAdmin) return;
-    conn.invoke("StartPrivateChat", deviceId);
-}
-
-function endPrivateChat() {
-    conn.invoke("EndPrivateChat");
-}
-
-// Admin functions
-async function login() {
-    var pw = document.getElementById("password").value;
-    var ok = await conn.invoke("Login", pw);
-    if (!ok) { alert("Wrong password!"); return; }
-    isAdmin = true;
-    document.getElementById("loginbox").style.display = "none";
-    document.getElementById("clearAllBtn").style.display = "block";
-    document.getElementById("tabPrivate").style.display = 'inline-block';
-    fetchVisitors();
-}
-
-async function fetchVisitors() {
-    var r = await fetch("/api/visitors");
-    var data = await r.json();
-    renderVisitors(data);
-}
-
-function renderVisitors(visitors) {
-    allVisitors = visitors || [];
-    var list = document.getElementById("visitorList");
-    if (!allVisitors.length) {
-        list.innerHTML = '<div style="color:#555;font-size:.8rem;padding:20px;text-align:center">No visitors</div>';
-        return;
-    }
-    var html = "";
-    allVisitors.forEach(v => {
-        var ip = v.lastIp || v.firstIp || "Unknown";
-        var displayName = v.nickname || v.deviceId;
-        var online = v.online;
-        html += `<div class="card">
-            <span class="dot ${online?'on':'off'}"></span>
-            <span class="devname">${displayName}</span>`;
-        if (isAdmin) {
-            html += `<div class="actions">`;
-            if (online && v.deviceId !== myDeviceId) {
-                html += `<button onclick="startPrivateChat('${v.deviceId}')">Private Chat</button>`;
-            }
-            html += `<button class="danger" onclick="deleteVisitor('${v.deviceId}')">Delete</button></div>
-            <div class="nick-input">
-                <input placeholder="Nickname" id="nick-${v.deviceId}" value="${v.nickname||''}">
-                <button onclick="setNickname('${v.deviceId}')">Set</button>
-            </div>`;
-        }
-        html += `<span class="ip">IP: ${ip}</span><br>`;
-        if (v.locationInfo) html += `<span class="loc">📍 ${v.locationInfo}</span><br>`;
-        if (v.lat && v.lng) html += `<span class="geo">GPS: ${v.lat.toFixed(4)}, ${v.lng.toFixed(4)}</span><br>`;
-        html += `<span class="time">${new Date(v.lastSeen).toLocaleTimeString()}</span></div>`;
-    });
-    list.innerHTML = html;
-}
-
-async function setNickname(deviceId) {
-    var input = document.getElementById("nick-" + deviceId);
-    await conn.invoke("SetNickname", deviceId, input.value.trim());
-    fetchVisitors();
-}
-
-async function deleteVisitor(deviceId) {
-    if (!confirm("Delete this visitor?")) return;
-    await conn.invoke("DeleteVisitor", deviceId);
-}
-
-async function clearAll() {
-    if (!confirm("Clear all visitors?")) return;
-    await conn.invoke("ClearAll");
-}
-
-setInterval(function() { if (isAdmin) fetchVisitors(); }, 10000);
-
-function openSidebar() {
-    document.getElementById("sidebar").classList.add("mobile");
-    document.getElementById("overlay").classList.add("show");
-}
-function closeSidebar() {
-    document.getElementById("sidebar").classList.remove("mobile");
-    document.getElementById("overlay").classList.remove("show");
-}
+function addMsg(u,m,t){ var d=document.createElement("div"); d.className="msg"; d.innerHTML=`<span class="uname ${u.startsWith('[ADMIN]')?'admin':'normal'}">${u}</span><span class="time">${t}</span><div class="text">${m}</div>`; document.getElementById("messages").appendChild(d); document.getElementById("messages").scrollTop=document.getElementById("messages").scrollHeight; }
+function addPrivateMsg(s,m,t){ var d=document.createElement("div"); d.className="msg"; d.innerHTML=`<span class="uname admin">${s}</span><span class="time">${t}</span><div class="text">${m}</div>`; document.getElementById("messages").appendChild(d); document.getElementById("messages").scrollTop=document.getElementById("messages").scrollHeight; }
+function sendMsg(){ var m=document.getElementById("msgInput").value.trim(); if(!m) return;
+    if(currentTab==='private' && activePrivateTarget){ if(isAdmin) conn.invoke("AdminSendPrivate", activePrivateTarget, m); else conn.invoke("VisitorSendPrivate", m); }
+    else { var n=document.getElementById("nameInput").value||"Guest"; conn.invoke("SendMsg",n,m); }
+    document.getElementById("msgInput").value=''; }
+function switchTab(t){ currentTab=t; document.getElementById("tabPublic").classList.remove("active"); document.getElementById("tabPrivate").classList.remove("active");
+    document.getElementById("messages").innerHTML='';
+    if(t==='public'){ document.getElementById("tabPublic").classList.add("active"); document.getElementById("privateBar").style.display='none'; conn.invoke("GetChatHistory"); }
+    else { document.getElementById("tabPrivate").classList.add("active"); if(isAdmin) document.getElementById("privateBar").style.display='flex';
+        var cache = privateCache[activePrivateTarget]||[]; cache.forEach(m => addPrivateMsg(m.sender,m.msg,m.time)); } }
+function openPrivateTab(targetId){ activePrivateTarget=targetId; document.getElementById("tabPrivate").style.display='inline-block';
+    if(isAdmin){ document.getElementById("privateBar").style.display='flex'; document.getElementById("privateSelect").value=targetId; }
+    switchTab('private'); }
+function onPrivateSelect(){ var v=document.getElementById("privateSelect").value; if(v) conn.invoke("AdminStartPrivate", v); }
+function endPrivateChat(){ if(activePrivateTarget) conn.invoke("EndPrivate", activePrivateTarget); }
+async function login(){ var ok=await conn.invoke("Login", document.getElementById("password").value); if(!ok){alert("Wrong password!");return;} isAdmin=true; document.getElementById("loginbox").style.display="none"; document.getElementById("clearAllBtn").style.display="block"; document.getElementById("tabPrivate").style.display='inline-block'; fetchVisitors(); }
+async function fetchVisitors(){ var r=await fetch("/api/visitors"); renderVisitors(await r.json()); }
+function renderVisitors(v){ allVisitors=v||[]; var l=document.getElementById("visitorList"); if(!allVisitors.length){l.innerHTML='<div style="color:#555;font-size:.8rem;padding:20px;text-align:center">No visitors</div>';return;} var h="",sel=document.getElementById("privateSelect"); sel.innerHTML='<option value="">-- Select --</option>';
+    allVisitors.forEach(v=>{ var ip=v.lastIp||v.firstIp||"Unknown", name=v.nickname||v.deviceId, on=v.online;
+        h+=`<div class="card"><span class="dot ${on?'on':'off'}"></span><span class="devname">${name}</span>`;
+        if(isAdmin){ h+=`<div class="actions">`; if(on && v.deviceId!==myDeviceId) h+=`<button onclick="conn.invoke('AdminStartPrivate','${v.deviceId}')">Private Chat</button>`; h+=`<button class="danger" onclick="conn.invoke('DeleteVisitor','${v.deviceId}')">Delete</button></div>`; }
+        h+=`<span class="ip">IP: ${ip}</span><br>`; if(v.locationInfo) h+=`<span class="loc">📍 ${v.locationInfo}</span><br>`; if(v.lat&&v.lng) h+=`<span class="geo">GPS: ${v.lat.toFixed(4)}, ${v.lng.toFixed(4)}</span><br>`; h+=`<span class="time">${new Date(v.lastSeen).toLocaleTimeString()}</span></div>`;
+        if(isAdmin && on && v.deviceId!==myDeviceId) sel.innerHTML+=`<option value="${v.deviceId}">${name}</option>`; });
+    l.innerHTML=h; }
+setInterval(()=>{ if(isAdmin) fetchVisitors(); },10000);
+function openSidebar(){ document.getElementById("sidebar").classList.add("mobile"); document.getElementById("overlay").classList.add("show"); }
+function closeSidebar(){ document.getElementById("sidebar").classList.remove("mobile"); document.getElementById("overlay").classList.remove("show"); }
+async function clearAll(){ if(!confirm("Clear all?")) return; await conn.invoke("ClearAll"); }
 </script>
 </body>
 </html>
