@@ -8,14 +8,17 @@
     <style>
         *{margin:0;padding:0;box-sizing:border-box}
         body{background:#0a0a0f;color:#e0e0e0;font-family:'Segoe UI',sans-serif;height:100vh;display:flex}
-        .sidebar{width:340px;min-width:340px;background:#12121a;padding:14px;border-right:1px solid #252535;overflow-y:auto;display:flex;flex-direction:column;gap:8px}
+        .sidebar{width:360px;min-width:360px;background:#12121a;padding:14px;border-right:1px solid #252535;overflow-y:auto;display:flex;flex-direction:column;gap:8px}
         .sidebar h2{color:#50cd32;font-size:1rem}
-        .card{background:#1a1a28;padding:10px 12px;border-radius:8px;font-size:.75rem;border:1px solid #252535;margin-bottom:6px;position:relative}
+        .card{background:#1a1a28;padding:10px 12px;border-radius:8px;font-size:.75rem;border:1px solid #252535;margin-bottom:6px}
         .card .devname{color:#fff;font-weight:bold;font-size:.8rem}
         .card .ip{color:#50cd32}
         .card .loc{color:#aaa;font-size:.7rem}
         .card .geo{color:#666;font-size:.7rem}
         .card .time{color:#555;font-size:.65rem}
+        .card .actions{display:flex;gap:4px;margin-top:4px;flex-wrap:wrap}
+        .card .actions button{padding:3px 8px;font-size:.65rem;border:1px solid #50cd32;background:transparent;color:#50cd32;border-radius:4px;cursor:pointer}
+        .card .actions button.danger{border-color:#ff4444;color:#ff4444}
         .card .nick-input{display:flex;gap:4px;margin-top:4px}
         .card .nick-input input{flex:1;background:#0d0d15;border:1px solid #333;color:#fff;padding:4px 6px;border-radius:4px;font-size:.7rem}
         .card .nick-input button{background:#50cd32;color:#000;border:none;padding:4px 8px;border-radius:4px;font-size:.7rem;cursor:pointer}
@@ -32,6 +35,9 @@
         .main{flex:1;display:flex;flex-direction:column;min-width:0}
         .header{background:#12121a;padding:14px 16px;border-bottom:1px solid #252535;display:flex;justify-content:space-between;align-items:center}
         .header h1{color:#50cd32;font-size:1.1rem}
+        .tabs{display:flex;background:#12121a;border-bottom:1px solid #252535}
+        .tab{padding:10px 20px;cursor:pointer;color:#aaa;font-size:.85rem;border-bottom:2px solid transparent}
+        .tab.active{color:#50cd32;border-bottom-color:#50cd32}
         .messages{flex:1;padding:16px;overflow-y:auto}
         .msg{margin-bottom:10px;animation:fadeIn .3s}
         @keyframes fadeIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
@@ -46,6 +52,8 @@
         .input-area input:focus{outline:none;border-color:#50cd32}
         .input-area button{background:#50cd32;color:#000;border:none;padding:10px 16px;border-radius:8px;cursor:pointer;font-weight:bold;white-space:nowrap;font-size:.85rem}
         .input-area button:hover{background:#60dd42}
+        .private-select{display:flex;align-items:center;gap:8px;padding:0 16px 12px}
+        .private-select select{background:#1a1a28;color:#fff;border:1px solid #333;padding:8px;border-radius:6px}
         .toggle-btn{display:none;background:#50cd32;color:#000;border:none;padding:6px 12px;border-radius:6px;font-size:.8rem;cursor:pointer;font-weight:bold}
         .overlay{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.7);z-index:99}
         .overlay.show{display:block}
@@ -83,8 +91,18 @@
         <h1>Elias Connect</h1>
         <button class="toggle-btn" onclick="openSidebar()">Visitors</button>
     </div>
+    <div class="tabs">
+        <div class="tab active" id="tabPublic" onclick="switchTab('public')">Public Chat</div>
+        <div class="tab" id="tabPrivate" onclick="switchTab('private')" style="display:none">Private Chat</div>
+    </div>
     <div class="messages" id="messages"></div>
-    <div class="input-area">
+    <div class="private-select" id="privateSelect" style="display:none">
+        <span>Chat with: </span>
+        <select id="targetSelect" onchange="onTargetChange()">
+            <option value="">-- Select visitor --</option>
+        </select>
+    </div>
+    <div class="input-area" id="inputArea">
         <input type="text" id="nameInput" placeholder="Name..." value="Guest" style="max-width:100px">
         <input type="text" id="msgInput" placeholder="Type a message..." onkeypress="if(event.key==='Enter')sendMsg()">
         <button onclick="sendMsg()">Send</button>
@@ -95,6 +113,9 @@
 var conn = new signalR.HubConnectionBuilder().withUrl("/chat").build();
 var isAdmin = false;
 var allVisitors = [];
+var currentTab = 'public'; // 'public' hoặc 'private'
+var selectedPrivateDevice = null; // deviceId đang chat riêng
+var privateMessages = {}; // cache tin nhắn riêng theo deviceId
 
 conn.start().then(function() {
     console.log("SignalR connected");
@@ -118,20 +139,41 @@ conn.on("Init", function(ip, deviceId) {
     document.getElementById("mydevice").textContent = deviceId || "Unknown";
 });
 
+// Public messages
 conn.on("Msg", function(user, deviceName, msg, time) {
-    addMsg(user, deviceName, msg, time);
+    if (currentTab === 'public') addMsg(user, deviceName, msg, time);
+    // Lưu tạm để hiển thị khi chuyển tab
 });
 
 conn.on("History", function(h) {
-    if (h && h.length) {
-        h.forEach(function(m) {
-            addMsg(m.User, m.DeviceName, m.Message, new Date(m.Timestamp).toLocaleTimeString());
-        });
+    if (h && h.length && currentTab === 'public') {
+        h.forEach(function(m) { addMsg(m.User, m.DeviceName, m.Message, new Date(m.Timestamp).toLocaleTimeString()); });
+    }
+});
+
+// Private messages
+conn.on("PrivateMsg", function(deviceId, sender, msg, time) {
+    if (!privateMessages[deviceId]) privateMessages[deviceId] = [];
+    privateMessages[deviceId].push({sender: sender, msg: msg, time: time});
+    if (currentTab === 'private' && selectedPrivateDevice === deviceId) {
+        addPrivateMsg(sender, msg, time);
+    }
+    // Nếu là visitor và tab private chưa mở, tự động mở tab private
+    if (!isAdmin && currentTab !== 'private') {
+        document.getElementById('tabPrivate').style.display = 'inline-block';
+    }
+});
+
+conn.on("PrivateHistory", function(msgs) {
+    if (msgs && msgs.length) {
+        var deviceId = msgs[0]?.deviceId; // không có trong model, ta thêm sau
     }
 });
 
 conn.on("AdminData", function(visitors) {
+    allVisitors = visitors;
     renderVisitors(visitors);
+    updatePrivateSelect(visitors);
 });
 
 function addMsg(user, deviceName, msg, time) {
@@ -143,16 +185,31 @@ function addMsg(user, deviceName, msg, time) {
         '<span class="dev">(' + (deviceName || "?") + ')</span>' +
         '<span class="time">' + time + '</span>' +
         '<div class="text">' + msg + '</div>';
-    var c = document.getElementById("messages");
-    c.appendChild(div);
-    c.scrollTop = c.scrollHeight;
+    document.getElementById("messages").appendChild(div);
+    document.getElementById("messages").scrollTop = document.getElementById("messages").scrollHeight;
+}
+
+function addPrivateMsg(sender, msg, time) {
+    var div = document.createElement("div");
+    div.className = "msg";
+    div.innerHTML =
+        '<span class="uname admin">' + sender + '</span>' +
+        '<span class="time">' + time + ' (private)</span>' +
+        '<div class="text">' + msg + '</div>';
+    document.getElementById("messages").appendChild(div);
+    document.getElementById("messages").scrollTop = document.getElementById("messages").scrollHeight;
 }
 
 function sendMsg() {
     var name = document.getElementById("nameInput").value || "Guest";
     var msg = document.getElementById("msgInput").value;
     if (!msg.trim()) return;
-    conn.invoke("SendMsg", name, msg);
+
+    if (currentTab === 'private' && selectedPrivateDevice) {
+        conn.invoke("SendPrivateMessage", selectedPrivateDevice, msg);
+    } else {
+        conn.invoke("SendMsg", name, msg);
+    }
     document.getElementById("msgInput").value = "";
 }
 
@@ -163,6 +220,7 @@ async function login() {
     isAdmin = true;
     document.getElementById("loginbox").style.display = "none";
     document.getElementById("clearAllBtn").style.display = "block";
+    document.getElementById("tabPrivate").style.display = 'inline-block';
     fetchVisitors();
 }
 
@@ -170,8 +228,8 @@ async function fetchVisitors() {
     try {
         var r = await fetch("/api/visitors");
         var data = await r.json();
-        console.log("Visitors loaded:", data);
         renderVisitors(data);
+        updatePrivateSelect(data);
     } catch(e) { console.error(e); }
 }
 
@@ -196,8 +254,14 @@ function renderVisitors(visitors) {
         html += '<div class="card">';
         html += '<span class="dot ' + (online ? "on" : "off") + '"></span>';
         html += '<span class="devname">' + displayName + '</span>';
-        // Nickname input (only admin)
+        // Actions (admin only)
         if (isAdmin) {
+            html += '<div class="actions">';
+            if (online && v.deviceId !== document.getElementById("mydevice").textContent) {
+                html += '<button onclick="startPrivateChat(\'' + v.deviceId + '\')">Private Chat</button>';
+            }
+            html += '<button class="danger" onclick="deleteVisitor(\'' + v.deviceId + '\')">Delete</button>';
+            html += '</div>';
             html += '<div class="nick-input">';
             html += '<input type="text" placeholder="Nickname" id="nick-' + v.deviceId + '" value="' + (v.nickname || '') + '">';
             html += '<button onclick="setNickname(\'' + v.deviceId + '\')">Set</button>';
@@ -212,18 +276,82 @@ function renderVisitors(visitors) {
     list.innerHTML = html;
 }
 
+function updatePrivateSelect(visitors) {
+    var select = document.getElementById("targetSelect");
+    var currentValue = select.value;
+    select.innerHTML = '<option value="">-- Select visitor --</option>';
+    if (visitors) {
+        visitors.forEach(function(v) {
+            if (v.online && v.deviceId !== document.getElementById("mydevice").textContent) {
+                var label = (v.nickname || v.deviceId);
+                select.innerHTML += '<option value="' + v.deviceId + '">' + label + '</option>';
+            }
+        });
+    }
+    if (currentValue && select.querySelector('option[value="' + currentValue + '"]')) {
+        select.value = currentValue;
+    }
+}
+
+function startPrivateChat(deviceId) {
+    selectedPrivateDevice = deviceId;
+    document.getElementById("privateSelect").style.display = 'flex';
+    document.getElementById("targetSelect").value = deviceId;
+    switchTab('private');
+    // Load private history
+    conn.invoke("GetPrivateHistory", deviceId);
+}
+
+function switchTab(tab) {
+    currentTab = tab;
+    document.getElementById("tabPublic").classList.remove("active");
+    document.getElementById("tabPrivate").classList.remove("active");
+    if (tab === 'public') {
+        document.getElementById("tabPublic").classList.add("active");
+        document.getElementById("privateSelect").style.display = 'none';
+        // Hiển thị public chat
+        document.getElementById("messages").innerHTML = '';
+        // Lấy lịch sử public
+        conn.invoke("GetChatHistory");
+    } else {
+        document.getElementById("tabPrivate").classList.add("active");
+        document.getElementById("privateSelect").style.display = 'flex';
+        if (selectedPrivateDevice) {
+            document.getElementById("targetSelect").value = selectedPrivateDevice;
+            // Hiển thị private messages của device đó
+            document.getElementById("messages").innerHTML = '';
+            if (privateMessages[selectedPrivateDevice]) {
+                privateMessages[selectedPrivateDevice].forEach(function(m) {
+                    addPrivateMsg(m.sender, m.msg, m.time);
+                });
+            }
+        }
+    }
+}
+
+function onTargetChange() {
+    var newTarget = document.getElementById("targetSelect").value;
+    if (newTarget) {
+        startPrivateChat(newTarget);
+    }
+}
+
 async function setNickname(deviceId) {
     var input = document.getElementById("nick-" + deviceId);
     var nickname = input.value.trim();
     await conn.invoke("SetNickname", deviceId, nickname);
-    // Refresh list
     fetchVisitors();
 }
 
+async function deleteVisitor(deviceId) {
+    if (!confirm("Xóa visitor này? Họ sẽ xuất hiện lại nếu tải lại trang.")) return;
+    await conn.invoke("DeleteVisitor", deviceId);
+    // Danh sách sẽ cập nhật qua AdminData
+}
+
 async function clearAll() {
-    if (!confirm("Xóa toàn bộ visitor hiện tại? Họ sẽ xuất hiện lại khi tải lại trang.")) return;
+    if (!confirm("Xóa toàn bộ visitor hiện tại?")) return;
     await conn.invoke("ClearAll");
-    // List will be updated via AdminData callback
 }
 
 setInterval(function() {

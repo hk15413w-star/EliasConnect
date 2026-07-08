@@ -76,6 +76,7 @@ public class ChatHub : Hub
 
         await Clients.Caller.SendAsync("Init", ip, deviceId);
         await Clients.Caller.SendAsync("History", _tracker.GetMessages());
+        await Clients.Caller.SendAsync("PrivateHistory", _tracker.GetPrivateMessages(deviceId));
         await base.OnConnectedAsync();
     }
 
@@ -85,6 +86,7 @@ public class ChatHub : Hub
         await base.OnDisconnectedAsync(ex);
     }
 
+    // --- Public Chat ---
     public async Task SendMsg(string name, string msg)
     {
         var visitor = _tracker.GetByConnection(Context.ConnectionId);
@@ -96,6 +98,7 @@ public class ChatHub : Hub
         await Clients.All.SendAsync("Msg", finalName, deviceName, msg, DateTime.Now.ToString("HH:mm"));
     }
 
+    // --- Admin ---
     public Task<bool> Login(string password)
     {
         if (password != "elias2026") return Task.FromResult(false);
@@ -109,7 +112,6 @@ public class ChatHub : Hub
         return Task.CompletedTask;
     }
 
-    // Admin: xóa toàn bộ visitor khỏi danh sách hiện tại
     public async Task ClearAll()
     {
         if (!_tracker.IsAdmin(Context.ConnectionId)) return;
@@ -117,12 +119,48 @@ public class ChatHub : Hub
         await Clients.Caller.SendAsync("AdminData", _tracker.GetAll());
     }
 
-    // Admin: đặt biệt danh cho device
+    public async Task DeleteVisitor(string deviceId)
+    {
+        if (!_tracker.IsAdmin(Context.ConnectionId)) return;
+        _tracker.DeleteDevice(deviceId);
+        await Clients.Caller.SendAsync("AdminData", _tracker.GetAll());
+    }
+
     public async Task SetNickname(string deviceId, string nickname)
     {
         if (!_tracker.IsAdmin(Context.ConnectionId)) return;
         _tracker.SetNickname(deviceId, nickname);
         await Clients.Caller.SendAsync("AdminData", _tracker.GetAll());
+    }
+
+    // --- Private Chat (Admin ↔ Visitor) ---
+    public async Task SendPrivateMessage(string targetDeviceId, string message)
+    {
+        var sender = _tracker.GetByConnection(Context.ConnectionId);
+        if (sender == null || !sender.IsAdmin) return; // chỉ admin được gửi riêng
+
+        var targetConnId = _tracker.GetOnlineConnectionId(targetDeviceId);
+        if (targetConnId == null) return; // visitor không online
+
+        var senderName = $"[ADMIN] {sender.DeviceName}";
+        _tracker.AddPrivateMessage(targetDeviceId, senderName, message);
+
+        // Gửi cho admin
+        await Clients.Caller.SendAsync("PrivateMsg", targetDeviceId, senderName, message, DateTime.Now.ToString("HH:mm"));
+        // Gửi cho visitor
+        await Clients.Client(targetConnId).SendAsync("PrivateMsg", targetDeviceId, senderName, message, DateTime.Now.ToString("HH:mm"));
+    }
+
+    public async Task GetPrivateHistory(string deviceId)
+    {
+        var visitor = _tracker.GetByConnection(Context.ConnectionId);
+        if (visitor == null) return;
+        // Chỉ admin hoặc chính visitor đó mới xem được lịch sử riêng
+        if (visitor.IsAdmin || visitor.DeviceId == deviceId)
+        {
+            var msgs = _tracker.GetPrivateMessages(deviceId);
+            await Clients.Caller.SendAsync("PrivateHistory", msgs);
+        }
     }
 }
 
@@ -131,7 +169,8 @@ public class VisitorTracker
 {
     private readonly ConcurrentDictionary<string, Device> _devices = new();
     private readonly ConcurrentDictionary<string, string> _connToDevice = new();
-    private readonly ConcurrentDictionary<string, string> _nicknames = new(); // deviceId -> nickname
+    private readonly ConcurrentDictionary<string, string> _nicknames = new();
+    private readonly ConcurrentDictionary<string, List<PrivateMessage>> _privateMessages = new(); // deviceId -> messages
     private readonly List<ChatMessage> _messages = new();
     private readonly object _msgLock = new();
     private readonly IHttpClientFactory _httpFactory;
@@ -158,7 +197,7 @@ public class VisitorTracker
 
         _connToDevice[connectionId] = deviceId;
 
-        // Luôn gọi IP geolocation nếu chưa có tọa độ (Lat == 0)
+        // IP geolocation tự động (không cần GPS permission)
         if (device.Lat == 0 && ip != "127.0.0.1" && ip != "0.0.0.0")
         {
             Console.WriteLine($"[GEO] Fetching location for IP: {ip}");
@@ -168,24 +207,15 @@ public class VisitorTracker
                 client.DefaultRequestHeaders.Add("User-Agent", "EliasConnect/1.0");
                 var url = $"https://ipapi.co/{ip}/json/";
                 var r = await client.GetStringAsync(url);
-                Console.WriteLine($"[GEO] Response: {r}");
                 var data = JsonSerializer.Deserialize<IpapiResponse>(r);
                 if (data != null && !string.IsNullOrEmpty(data.country_name))
                 {
                     device.Lat = data.latitude;
                     device.Lng = data.longitude;
                     device.LocationInfo = $"{data.country_name}, {data.region}, {data.city}";
-                    Console.WriteLine($"[GEO] SUCCESS: {device.LocationInfo}");
-                }
-                else
-                {
-                    Console.WriteLine("[GEO] No country in response");
                 }
             }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[GEO] ERROR: {ex.Message}");
-            }
+            catch { }
         }
     }
 
@@ -208,11 +238,13 @@ public class VisitorTracker
         return null;
     }
 
-    public bool IsAdmin(string connectionId)
+    public string? GetOnlineConnectionId(string deviceId)
     {
-        var device = GetByConnection(connectionId);
-        return device?.IsAdmin ?? false;
+        // Tìm connectionId đang online của device
+        return _connToDevice.FirstOrDefault(kvp => kvp.Value == deviceId).Key;
     }
+
+    public bool IsAdmin(string connectionId) => GetByConnection(connectionId)?.IsAdmin ?? false;
 
     public void SetAdmin(string connectionId, bool isAdmin)
     {
@@ -236,26 +268,44 @@ public class VisitorTracker
     {
         lock (_msgLock)
         {
-            _messages.Add(new ChatMessage
-            {
-                User = user,
-                DeviceName = deviceName,
-                Message = msg,
-                Timestamp = DateTime.Now
-            });
+            _messages.Add(new ChatMessage { User = user, DeviceName = deviceName, Message = msg, Timestamp = DateTime.Now });
             if (_messages.Count > 500) _messages.RemoveAt(0);
         }
     }
 
-    // Xóa toàn bộ device (giữ nickname)
+    public void AddPrivateMessage(string deviceId, string senderName, string message)
+    {
+        var list = _privateMessages.GetOrAdd(deviceId, _ => new List<PrivateMessage>());
+        lock (list)
+        {
+            list.Add(new PrivateMessage { Sender = senderName, Message = message, Timestamp = DateTime.Now });
+            if (list.Count > 200) list.RemoveAt(0);
+        }
+    }
+
+    public List<PrivateMessage> GetPrivateMessages(string deviceId)
+    {
+        if (_privateMessages.TryGetValue(deviceId, out var list))
+        {
+            lock (list) return list.ToList();
+        }
+        return new List<PrivateMessage>();
+    }
+
     public void ClearAll()
     {
         _devices.Clear();
         _connToDevice.Clear();
-        // Giữ nguyên _nicknames để dùng lại khi device kết nối lại
     }
 
-    // Đặt biệt danh
+    public void DeleteDevice(string deviceId)
+    {
+        _devices.TryRemove(deviceId, out _);
+        // Xóa connection tương ứng nếu có
+        var connToRemove = _connToDevice.Where(kvp => kvp.Value == deviceId).Select(kvp => kvp.Key).ToList();
+        foreach (var conn in connToRemove) _connToDevice.TryRemove(conn, out _);
+    }
+
     public void SetNickname(string deviceId, string nickname)
     {
         if (string.IsNullOrWhiteSpace(nickname))
@@ -266,13 +316,11 @@ public class VisitorTracker
 
     public List<Device> GetAll()
     {
-        var devices = _devices.Values.OrderByDescending(d => d.LastSeen).ToList();
-        // Gán nickname nếu có
-        foreach (var device in devices)
+        return _devices.Values.OrderByDescending(d => d.LastSeen).Select(d =>
         {
-            device.Nickname = _nicknames.TryGetValue(device.DeviceId, out var nick) ? nick : "";
-        }
-        return devices;
+            d.Nickname = _nicknames.TryGetValue(d.DeviceId, out var nick) ? nick : "";
+            return d;
+        }).ToList();
     }
 
     public List<ChatMessage> GetMessages() { lock (_msgLock) return _messages.ToList(); }
@@ -293,13 +341,20 @@ public class Device
     public DateTime FirstSeen { get; set; }
     public DateTime LastSeen { get; set; }
     public string DeviceName => DeviceId;
-    public string Nickname { get; set; } = ""; // Sẽ được gán khi GetAll()
+    public string Nickname { get; set; } = "";
 }
 
 public class ChatMessage
 {
     public string User { get; set; } = "";
     public string DeviceName { get; set; } = "";
+    public string Message { get; set; } = "";
+    public DateTime Timestamp { get; set; }
+}
+
+public class PrivateMessage
+{
+    public string Sender { get; set; } = "";
     public string Message { get; set; } = "";
     public DateTime Timestamp { get; set; }
 }
