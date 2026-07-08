@@ -153,11 +153,11 @@ public class VisitorTracker
                 var r = await client.GetStringAsync(url);
                 Console.WriteLine($"[GEO] Response: {r}");
                 var data = JsonSerializer.Deserialize<IpapiResponse>(r);
-                if (data != null && !string.IsNullOrEmpty(data.Country))
+                if (data != null && !string.IsNullOrEmpty(data.country_name))
                 {
-                    device.Lat = data.Latitude;
-                    device.Lng = data.Longitude;
-                    device.LocationInfo = $"{data.Country}, {data.Region}, {data.City}";
+                    device.Lat = data.latitude;
+                    device.Lng = data.longitude;
+                    device.LocationInfo = $"{data.country_name}, {data.region}, {data.city}";
                     Console.WriteLine($"[GEO] SUCCESS: {device.LocationInfo}");
                 }
                 else
@@ -227,6 +227,7 @@ public class VisitorTracker
     public List<ChatMessage> GetMessages() { lock (_msgLock) return _messages.ToList(); }
 }
 
+// ==================== MODELS ====================
 public class Device
 {
     public string DeviceId { get; set; } = "";
@@ -253,9 +254,9 @@ public class ChatMessage
 
 public class IpapiResponse
 {
-    public string Country { get; set; } = "";
-    public string Region { get; set; } = "";
-    public string City { get; set; } = "";
-    public double Latitude { get; set; }
-    public double Longitude { get; set; }
+    public string country_name { get; set; } = "";
+    public string region { get; set; } = "";
+    public string city { get; set; } = "";
+    public double latitude { get; set; }
+    public double longitude { get; set; }
 }
