@@ -5,6 +5,7 @@ using System.Linq;
 using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -36,17 +37,26 @@ public class ChatHub : Hub
     private string GetRealIp()
     {
         var ctx = Context.GetHttpContext();
-        if (ctx == null) return "127.0.0.1";
+        if (ctx == null) return "0.0.0.0";
 
         var xff = ctx.Request.Headers["X-Forwarded-For"].FirstOrDefault();
-        if (!string.IsNullOrEmpty(xff)) return xff.Split(',')[0].Trim();
+        if (!string.IsNullOrEmpty(xff))
+        {
+            var ips = xff.Split(',').Select(i => i.Trim());
+            foreach (var ip in ips)
+            {
+                if (!ip.StartsWith("10.") && !ip.StartsWith("172.") && !ip.StartsWith("192.168."))
+                    return ip;
+            }
+            return ips.First();
+        }
 
         var xri = ctx.Request.Headers["X-Real-IP"].FirstOrDefault();
         if (!string.IsNullOrEmpty(xri)) return xri;
 
         var rip = ctx.Connection.RemoteIpAddress?.ToString();
         if (rip == "::1") return "127.0.0.1";
-        return rip ?? "127.0.0.1";
+        return rip ?? "0.0.0.0";
     }
 
     private static string HashDevice(string ip, string ua)
@@ -62,7 +72,7 @@ public class ChatHub : Hub
         var ua = Context.GetHttpContext()?.Request.Headers["User-Agent"].ToString() ?? "";
         var deviceId = HashDevice(ip, ua);
 
-        _tracker.Connect(Context.ConnectionId, deviceId, ip, ua);
+        await _tracker.ConnectAsync(Context.ConnectionId, deviceId, ip, ua);
 
         await Clients.Caller.SendAsync("Init", ip, deviceId);
         await Clients.Caller.SendAsync("History", _tracker.GetMessages());
@@ -86,29 +96,35 @@ public class ChatHub : Hub
         await Clients.All.SendAsync("Msg", finalName, deviceName, msg, DateTime.Now.ToString("HH:mm"));
     }
 
-    public async Task<bool> Login(string password)
+    public Task<bool> Login(string password)
     {
-        if (password != "elias2026") return false;
-
+        if (password != "elias2026") return Task.FromResult(false);
         _tracker.SetAdmin(Context.ConnectionId, true);
-        return true;
+        return Task.FromResult(true);
     }
 
-    public async Task UpdateLoc(double lat, double lng, string info)
+    public Task UpdateLoc(double lat, double lng, string info)
     {
         _tracker.SetLocation(Context.ConnectionId, lat, lng, info);
+        return Task.CompletedTask;
     }
 }
 
 // ==================== VISITOR TRACKER ====================
 public class VisitorTracker
 {
-    private readonly ConcurrentDictionary<string, Device> _devices = new();   // deviceId -> Device
-    private readonly ConcurrentDictionary<string, string> _connToDevice = new(); // connectionId -> deviceId
+    private readonly ConcurrentDictionary<string, Device> _devices = new();
+    private readonly ConcurrentDictionary<string, string> _connToDevice = new();
     private readonly List<ChatMessage> _messages = new();
     private readonly object _msgLock = new();
+    private readonly IHttpClientFactory _httpFactory;
 
-    public void Connect(string connectionId, string deviceId, string ip, string ua)
+    public VisitorTracker(IHttpClientFactory httpFactory)
+    {
+        _httpFactory = httpFactory;
+    }
+
+    public async Task ConnectAsync(string connectionId, string deviceId, string ip, string ua)
     {
         var device = _devices.GetOrAdd(deviceId, _ => new Device
         {
@@ -124,6 +140,24 @@ public class VisitorTracker
         device.UserAgent = ua;
 
         _connToDevice[connectionId] = deviceId;
+
+        // Tự động tra IP → vị trí (không cần GPS permission)
+        if (string.IsNullOrEmpty(device.LocationInfo) && ip != "127.0.0.1" && ip != "0.0.0.0")
+        {
+            try
+            {
+                var client = _httpFactory.CreateClient();
+                var r = await client.GetStringAsync($"http://ip-api.com/json/{ip}?fields=country,regionName,city,lat,lon");
+                var data = JsonSerializer.Deserialize<IpInfo>(r);
+                if (data != null && data.Lat != 0)
+                {
+                    device.Lat = data.Lat;
+                    device.Lng = data.Lon;
+                    device.LocationInfo = $"{data.Country}, {data.RegionName}, {data.City}";
+                }
+            }
+            catch { }
+        }
     }
 
     public void Disconnect(string connectionId)
@@ -181,6 +215,7 @@ public class VisitorTracker
     public List<ChatMessage> GetMessages() { lock (_msgLock) return _messages.ToList(); }
 }
 
+// ==================== MODELS ====================
 public class Device
 {
     public string DeviceId { get; set; } = "";
@@ -203,4 +238,13 @@ public class ChatMessage
     public string DeviceName { get; set; } = "";
     public string Message { get; set; } = "";
     public DateTime Timestamp { get; set; }
+}
+
+public class IpInfo
+{
+    public string Country { get; set; } = "";
+    public string RegionName { get; set; } = "";
+    public string City { get; set; } = "";
+    public double Lat { get; set; }
+    public double Lon { get; set; }
 }
