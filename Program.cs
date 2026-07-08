@@ -27,6 +27,7 @@ app.MapGet("/api/visitors", (VisitorTracker t) => t.GetAll());
 
 app.Run();
 
+// ==================== CHAT HUB ====================
 public class ChatHub : Hub
 {
     private readonly VisitorTracker _tracker;
@@ -109,6 +110,7 @@ public class ChatHub : Hub
     }
 }
 
+// ==================== VISITOR TRACKER ====================
 public class VisitorTracker
 {
     private readonly ConcurrentDictionary<string, Device> _devices = new();
@@ -139,22 +141,34 @@ public class VisitorTracker
 
         _connToDevice[connectionId] = deviceId;
 
-        if (string.IsNullOrEmpty(device.LocationInfo) && ip != "127.0.0.1" && ip != "0.0.0.0")
+        // Luôn gọi IP geolocation nếu chưa có tọa độ
+        if (device.Lat == 0 && ip != "127.0.0.1" && ip != "0.0.0.0")
         {
+            Console.WriteLine($"[GEO] Fetching location for IP: {ip}");
             try
             {
                 var client = _httpFactory.CreateClient();
                 client.DefaultRequestHeaders.Add("User-Agent", "EliasConnect/1.0");
-                var r = await client.GetStringAsync($"https://ipapi.co/{ip}/json/");
+                var url = $"https://ipapi.co/{ip}/json/";
+                var r = await client.GetStringAsync(url);
+                Console.WriteLine($"[GEO] Response: {r}");
                 var data = JsonSerializer.Deserialize<IpapiResponse>(r);
                 if (data != null && !string.IsNullOrEmpty(data.Country))
                 {
                     device.Lat = data.Latitude;
                     device.Lng = data.Longitude;
                     device.LocationInfo = $"{data.Country}, {data.Region}, {data.City}";
+                    Console.WriteLine($"[GEO] SUCCESS: {device.LocationInfo}");
+                }
+                else
+                {
+                    Console.WriteLine("[GEO] No country in response");
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[GEO] ERROR: {ex.Message}");
+            }
         }
     }
 
