@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Builder;
@@ -24,7 +25,9 @@ app.MapGet("/api/visitors", (VisitorTracker tracker) => tracker.GetAll());
 app.MapGet("/api/locations", (VisitorTracker tracker) => tracker.GetLocations());
 app.MapGet("/api/my-ip", (HttpContext context) =>
 {
-    var ip = context.Connection.RemoteIpAddress?.ToString() ?? "Unknown";
+    var ip = context.Request.Headers["X-Forwarded-For"].FirstOrDefault()
+          ?? context.Connection.RemoteIpAddress?.ToString()
+          ?? "Unknown";
     return Results.Ok(new { ip });
 });
 
@@ -44,10 +47,18 @@ public class ChatHub : Hub
         _tracker = tracker;
     }
 
+    private string GetIp()
+    {
+        var ctx = Context.GetHttpContext();
+        return ctx?.Request.Headers["X-Forwarded-For"].FirstOrDefault()
+            ?? ctx?.Connection.RemoteIpAddress?.ToString()
+            ?? "Unknown";
+    }
+
     public override async Task OnConnectedAsync()
     {
         var connectionId = Context.ConnectionId;
-        var ip = Context.GetHttpContext()?.Connection.RemoteIpAddress?.ToString() ?? "Unknown";
+        var ip = GetIp();
         var userAgent = Context.GetHttpContext()?.Request.Headers["User-Agent"].ToString() ?? "";
         _tracker.AddVisitor(connectionId, ip, userAgent);
         await Clients.Caller.SendAsync("SetConnectionId", connectionId);
@@ -121,9 +132,9 @@ public class ChatHub : Hub
         }
     }
 
-    public async Task<bool> IsAuthorized()
+    public Task<bool> IsAuthorized()
     {
-        return _admins.Contains(Context.ConnectionId) || _authorizedViewers.Contains(Context.ConnectionId);
+        return Task.FromResult(_admins.Contains(Context.ConnectionId) || _authorizedViewers.Contains(Context.ConnectionId));
     }
 
     private async Task UpdateVisitorListForCaller()
