@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "c:\\Users\\DELL\\Documents\\EliasConnect\\EliasConnect.csproj": {}
+    "C:\\Users\\DELL\\Documents\\EliasConnect\\hk15413w.csproj": {}
   },
   "projects": {
-    "c:\\Users\\DELL\\Documents\\EliasConnect\\EliasConnect.csproj": {
+    "C:\\Users\\DELL\\Documents\\EliasConnect\\hk15413w.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "c:\\Users\\DELL\\Documents\\EliasConnect\\EliasConnect.csproj",
-        "projectName": "EliasConnect",
-        "projectPath": "c:\\Users\\DELL\\Documents\\EliasConnect\\EliasConnect.csproj",
+        "projectUniqueName": "C:\\Users\\DELL\\Documents\\EliasConnect\\hk15413w.csproj",
+        "projectName": "hk15413w",
+        "projectPath": "C:\\Users\\DELL\\Documents\\EliasConnect\\hk15413w.csproj",
         "packagesPath": "C:\\Users\\DELL\\.nuget\\packages\\",
-        "outputPath": "c:\\Users\\DELL\\Documents\\EliasConnect\\obj\\",
+        "outputPath": "C:\\Users\\DELL\\Documents\\EliasConnect\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
           "C:\\Users\\DELL\\AppData\\Roaming\\NuGet\\NuGet.Config"

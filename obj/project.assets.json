@@ -13,11 +13,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\Users\\DELL\\Documents\\EliasConnect\\EliasConnect.csproj",
+      "projectUniqueName": "c:\\Users\\DELL\\Documents\\EliasConnect\\EliasConnect.csproj",
       "projectName": "EliasConnect",
-      "projectPath": "C:\\Users\\DELL\\Documents\\EliasConnect\\EliasConnect.csproj",
+      "projectPath": "c:\\Users\\DELL\\Documents\\EliasConnect\\EliasConnect.csproj",
       "packagesPath": "C:\\Users\\DELL\\.nuget\\packages\\",
-      "outputPath": "C:\\Users\\DELL\\Documents\\EliasConnect\\obj\\",
+      "outputPath": "c:\\Users\\DELL\\Documents\\EliasConnect\\obj\\",
       "projectStyle": "PackageReference",
       "configFilePaths": [
         "C:\\Users\\DELL\\AppData\\Roaming\\NuGet\\NuGet.Config"
