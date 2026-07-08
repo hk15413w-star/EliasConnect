@@ -105,6 +105,7 @@ public class ChatHub : Hub
 
     public Task UpdateLoc(double lat, double lng, string info)
     {
+        // Chỉ cập nhật nếu có dữ liệu GPS thực (info không rỗng)
         _tracker.SetLocation(Context.ConnectionId, lat, lng, info);
         return Task.CompletedTask;
     }
@@ -141,7 +142,7 @@ public class VisitorTracker
 
         _connToDevice[connectionId] = deviceId;
 
-        // Luôn gọi IP geolocation nếu chưa có tọa độ
+        // Luôn gọi IP geolocation nếu chưa có tọa độ (Lat == 0)
         if (device.Lat == 0 && ip != "127.0.0.1" && ip != "0.0.0.0")
         {
             Console.WriteLine($"[GEO] Fetching location for IP: {ip}");
@@ -199,6 +200,9 @@ public class VisitorTracker
 
     public void SetLocation(string connectionId, double lat, double lng, string info)
     {
+        // Chỉ ghi đè nếu có thông tin GPS thực tế (không rỗng)
+        if (string.IsNullOrEmpty(info)) return;
+
         var device = GetByConnection(connectionId);
         if (device != null)
         {
