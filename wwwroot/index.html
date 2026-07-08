@@ -2,95 +2,134 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Elias Connect</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.0/signalr.min.js"></script>
     <style>
         * { margin:0; padding:0; box-sizing:border-box; }
         body { background:#0a0a0f; color:#e0e0e0; font-family:'Segoe UI',sans-serif; height:100vh; display:flex; }
-        .sidebar { width:320px; background:#12121a; padding:20px; border-right:1px solid #252535; overflow-y:auto; }
-        .sidebar h2 { color:#50cd32; font-size:1.1rem; margin-bottom:16px; }
-        .visitor-card { background:#1a1a28; padding:12px; border-radius:8px; margin-bottom:8px; font-size:0.8rem; border:1px solid #252535; }
+        
+        /* SIDEBAR - ẨN trên mobile */
+        .sidebar { width:340px; min-width:340px; background:#12121a; padding:16px; border-right:1px solid #252535; overflow-y:auto; display:flex; flex-direction:column; gap:10px; }
+        .sidebar h2 { color:#50cd32; font-size:1rem; }
+        .visitor-card { background:#1a1a28; padding:10px 12px; border-radius:8px; font-size:0.78rem; border:1px solid #252535; }
         .visitor-card .ip { color:#50cd32; font-weight:bold; }
         .visitor-card .city { color:#aaa; }
         .visitor-card .coords { color:#666; font-size:0.7rem; }
-        .main { flex:1; display:flex; flex-direction:column; }
-        .chat-header { background:#12121a; padding:16px 20px; border-bottom:1px solid #252535; }
-        .chat-header h1 { color:#50cd32; font-size:1.2rem; }
-        .chat-messages { flex:1; padding:20px; overflow-y:auto; }
-        .message { margin-bottom:12px; animation:fadeIn 0.3s; }
+        .visitor-card .time { color:#555; font-size:0.65rem; }
+        .btn-row { display:flex; gap:6px; margin-top:4px; }
+        .btn-row button { flex:1; padding:4px 0; font-size:0.65rem; border:1px solid #50cd32; background:transparent; color:#50cd32; border-radius:4px; cursor:pointer; }
+        .btn-row button:hover { background:#50cd32; color:#000; }
+        .btn-row .revoke { border-color:#ff4444; color:#ff4444; }
+        .btn-row .revoke:hover { background:#ff4444; color:#000; }
+        .login-box { background:#1a1a28; padding:12px; border-radius:8px; border:1px solid #333; }
+        .login-box input { width:100%; background:#0d0d15; border:1px solid #333; padding:10px; color:#fff; border-radius:6px; font-size:0.8rem; margin-bottom:8px; }
+        .login-box input:focus { outline:none; border-color:#50cd32; }
+        .login-box button { width:100%; background:#50cd32; color:#000; border:none; padding:10px; border-radius:6px; font-weight:bold; cursor:pointer; }
+        .online-count { color:#50cd32; font-size:0.75rem; }
+        
+        /* MAIN CHAT */
+        .main { flex:1; display:flex; flex-direction:column; min-width:0; }
+        .chat-header { background:#12121a; padding:14px 16px; border-bottom:1px solid #252535; display:flex; justify-content:space-between; align-items:center; }
+        .chat-header h1 { color:#50cd32; font-size:1.1rem; }
+        .chat-messages { flex:1; padding:16px; overflow-y:auto; }
+        .message { margin-bottom:10px; animation:fadeIn 0.3s; }
         @keyframes fadeIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
-        .message .user { color:#50cd32; font-weight:bold; font-size:0.85rem; }
-        .message .time { color:#555; font-size:0.7rem; margin-left:8px; }
-        .message .text { color:#ddd; margin-top:4px; word-wrap:break-word; }
-        .chat-input { background:#12121a; padding:16px 20px; border-top:1px solid #252535; display:flex; gap:10px; }
-        .chat-input input { flex:1; background:#1a1a28; border:1px solid #333; padding:12px; color:#fff; border-radius:8px; font-size:0.9rem; }
+        .message .user { color:#50cd32; font-weight:bold; font-size:0.8rem; }
+        .message .time { color:#555; font-size:0.65rem; margin-left:8px; }
+        .message .text { color:#ddd; margin-top:3px; word-wrap:break-word; font-size:0.9rem; }
+        .chat-input { background:#12121a; padding:12px 16px; border-top:1px solid #252535; display:flex; gap:8px; }
+        .chat-input input { flex:1; background:#1a1a28; border:1px solid #333; padding:10px 12px; color:#fff; border-radius:8px; font-size:0.85rem; min-width:0; }
         .chat-input input:focus { outline:none; border-color:#50cd32; }
-        .chat-input button { background:#50cd32; color:#000; border:none; padding:12px 20px; border-radius:8px; cursor:pointer; font-weight:bold; transition:0.2s; }
+        .chat-input button { background:#50cd32; color:#000; border:none; padding:10px 16px; border-radius:8px; cursor:pointer; font-weight:bold; white-space:nowrap; font-size:0.85rem; }
         .chat-input button:hover { background:#60dd42; }
-        .online-dot { width:8px; height:8px; background:#50cd32; border-radius:50%; display:inline-block; margin-right:6px; }
-        #map { height:180px; border-radius:8px; margin-bottom:16px; background:#1a1a28; border:1px solid #252535; }
-        .no-location { color:#555; font-size:0.7rem; text-align:center; padding:20px; }
+        .online-dot { width:7px; height:7px; background:#50cd32; border-radius:50%; display:inline-block; margin-right:5px; }
+        
+        /* TOGGLE SIDEBAR BUTTON - Mobile */
+        .toggle-sidebar { display:none; background:#50cd32; color:#000; border:none; padding:6px 12px; border-radius:6px; font-size:0.8rem; cursor:pointer; font-weight:bold; }
+        .sidebar.hidden { display:none; }
+        .sidebar-overlay { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:99; }
+        .sidebar-overlay.show { display:block; }
+        .sidebar.mobile-open { display:flex !important; position:fixed; top:0; left:0; height:100%; z-index:100; width:300px; }
+
+        @media (max-width: 768px) {
+            .sidebar { display:none; }
+            .toggle-sidebar { display:block; }
+            .chat-header h1 { font-size:1rem; }
+            .chat-input { padding:10px; gap:6px; }
+            .chat-input input { padding:8px 10px; font-size:0.8rem; }
+            .chat-input button { padding:8px 12px; font-size:0.8rem; }
+            .chat-messages { padding:12px; }
+        }
     </style>
 </head>
 <body>
-    <div class="sidebar">
-        <h2>Visitors</h2>
-        <div id="map"><div class="no-location">Waiting for locations...</div></div>
-        <div id="visitorList">
-            <div class="visitor-card">
-                <span class="online-dot"></span>
-                <span class="ip">You</span> — <span class="city">Connected</span>
-            </div>
+    <!-- SIDEBAR OVERLAY (mobile) -->
+    <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
+
+    <!-- SIDEBAR -->
+    <div class="sidebar" id="sidebar">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+            <h2>Visitors</h2>
+            <span class="online-count" id="onlineCount">0 online</span>
         </div>
+        <div class="login-box" id="loginBox">
+            <input type="password" id="adminPassword" placeholder="Admin password..." onkeypress="if(event.key==='Enter')login()">
+            <button onclick="login()">Login as Admin</button>
+        </div>
+        <div id="visitorList"></div>
     </div>
 
+    <!-- MAIN CHAT -->
     <div class="main">
         <div class="chat-header">
             <h1>Elias Connect</h1>
+            <button class="toggle-sidebar" onclick="openSidebar()">Visitors</button>
         </div>
         <div class="chat-messages" id="messages"></div>
         <div class="chat-input">
-            <input type="text" id="nameInput" placeholder="Your name..." value="Guest">
-            <input type="text" id="msgInput" placeholder="Type a message..." onkeypress="if(event.key==='Enter')sendMsg()">
+            <input type="text" id="nameInput" placeholder="Name..." value="Guest" style="max-width:100px;">
+            <input type="text" id="msgInput" placeholder="Message..." onkeypress="if(event.key==='Enter')sendMsg()">
             <button onclick="sendMsg()">Send</button>
         </div>
     </div>
 
     <script>
-        const connection = new signalR.HubConnectionBuilder()
-            .withUrl("/chat")
-            .build();
+        const connection = new signalR.HubConnectionBuilder().withUrl("/chat").build();
+        let isAdmin = false;
+        let isAuthorized = false;
+        let myConnectionId = "";
 
-        // Kết nối SignalR
         connection.start().then(() => {
             console.log("Connected!");
-            getLocation();
             connection.invoke("GetChatHistory");
+            getLocation();
         }).catch(err => console.error(err));
 
-        // Nhận tin nhắn mới
-        connection.on("ReceiveMessage", (user, msg, time) => {
-            appendMessage(user, msg, time);
+        connection.on("SetConnectionId", (id) => { myConnectionId = id; });
+        connection.on("ReceiveMessage", (user, msg, time) => appendMessage(user, msg, time));
+        connection.on("ChatHistory", (h) => h.forEach(m => appendMessage(m.User, m.Message, new Date(m.Timestamp).toLocaleTimeString())));
+        connection.on("VisitorCountUpdated", (count) => {
+            document.getElementById('onlineCount').textContent = count + ' online';
         });
-
-        // Nhận lịch sử chat
-        connection.on("ChatHistory", (history) => {
-            history.forEach(m => appendMessage(m.User, m.Message, 
-                new Date(m.Timestamp).toLocaleTimeString()));
+        connection.on("AdminStatusChanged", (status) => {
+            isAdmin = status;
+            if (status) { document.getElementById('loginBox').style.display='none'; requestVisitorList(); }
         });
-
-        // Cập nhật danh sách visitor
-        connection.on("UserConnected", () => updateVisitors());
-        connection.on("UserDisconnected", () => updateVisitors());
-        connection.on("LocationUpdated", () => updateVisitors());
+        connection.on("AuthorizedStatusChanged", (status) => {
+            isAuthorized = status;
+            if (status) requestVisitorList();
+        });
+        connection.on("VisitorList", (visitors) => renderVisitorList(visitors));
+        connection.on("LocationUpdated", () => { if (isAdmin || isAuthorized) requestVisitorList(); });
 
         function appendMessage(user, msg, time) {
             const div = document.createElement('div');
             div.className = 'message';
             div.innerHTML = `<span class="user">${user}</span><span class="time">${time}</span><div class="text">${msg}</div>`;
-            document.getElementById('messages').appendChild(div);
-            document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
+            const mc = document.getElementById('messages');
+            mc.appendChild(div);
+            mc.scrollTop = mc.scrollHeight;
         }
 
         function sendMsg() {
@@ -101,16 +140,41 @@
             document.getElementById('msgInput').value = '';
         }
 
-        async function updateVisitors() {
-            const resp = await fetch('/api/locations');
-            const visitors = await resp.json();
+        async function login() {
+            const pw = document.getElementById('adminPassword').value;
+            const result = await connection.invoke("LoginAsAdmin", pw);
+            if (!result) alert('Wrong password!');
+        }
+
+        async function requestVisitorList() {
+            await connection.invoke("RequestVisitorList");
+        }
+
+        async function grantAccess(connId) {
+            await connection.invoke("AddAuthorizedViewer", connId);
+        }
+
+        async function revokeAccess(connId) {
+            await connection.invoke("RemoveAuthorizedViewer", connId);
+        }
+
+        function renderVisitorList(visitors) {
             const list = document.getElementById('visitorList');
+            if (visitors.length === 0) {
+                list.innerHTML = '<div style="color:#555;font-size:0.8rem;padding:20px;text-align:center;">No visitors yet</div>';
+                return;
+            }
             list.innerHTML = visitors.map(v => `
                 <div class="visitor-card">
                     <span class="online-dot"></span>
                     <span class="ip">${v.IpAddress}</span><br>
-                    <span class="city">${v.City || 'Unknown'}</span>
+                    <span class="city">${v.City !== 'Unknown' ? v.City : 'City unknown'}</span>
                     ${v.Latitude ? `<div class="coords">${v.Latitude.toFixed(4)}, ${v.Longitude.toFixed(4)}</div>` : ''}
+                    <div class="time">${new Date(v.ConnectedAt).toLocaleTimeString()}</div>
+                    ${isAdmin ? `<div class="btn-row">
+                        <button onclick="grantAccess('${v.ConnectionId}')">Grant</button>
+                        <button class="revoke" onclick="revokeAccess('${v.ConnectionId}')">Revoke</button>
+                    </div>` : ''}
                 </div>
             `).join('');
         }
@@ -120,9 +184,7 @@
                 navigator.geolocation.getCurrentPosition(async (pos) => {
                     const city = await reverseGeocode(pos.coords.latitude, pos.coords.longitude);
                     connection.invoke("UpdateLocation", pos.coords.latitude, pos.coords.longitude, city);
-                }, () => {
-                    console.log("Geolocation denied by user");
-                });
+                }, () => {});
             }
         }
 
@@ -131,12 +193,20 @@
                 const resp = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
                 const data = await resp.json();
                 return data.address?.city || data.address?.town || data.address?.village || 'Unknown';
-            } catch {
-                return 'Unknown';
-            }
+            } catch { return 'Unknown'; }
         }
 
-        setInterval(updateVisitors, 5000);
+        function openSidebar() {
+            document.getElementById('sidebar').classList.add('mobile-open');
+            document.getElementById('sidebarOverlay').classList.add('show');
+        }
+
+        function closeSidebar() {
+            document.getElementById('sidebar').classList.remove('mobile-open');
+            document.getElementById('sidebarOverlay').classList.remove('show');
+        }
+
+        setInterval(() => { if (isAdmin || isAuthorized) requestVisitorList(); }, 10000);
     </script>
 </body>
 </html>

@@ -22,15 +22,22 @@ app.UseStaticFiles();
 app.MapHub<ChatHub>("/chat");
 app.MapGet("/api/visitors", (VisitorTracker tracker) => tracker.GetAll());
 app.MapGet("/api/locations", (VisitorTracker tracker) => tracker.GetLocations());
+app.MapGet("/api/my-ip", (HttpContext context) =>
+{
+    var ip = context.Connection.RemoteIpAddress?.ToString() ?? "Unknown";
+    return Results.Ok(new { ip });
+});
 
 app.Run();
 
 // ============================================
-// CHAT HUB — XỬ LÝ TIN NHẮN THỜI GIAN THỰC
+// CHAT HUB
 // ============================================
 public class ChatHub : Hub
 {
     private readonly VisitorTracker _tracker;
+    private static readonly HashSet<string> _admins = new() { "admin" };
+    private static readonly HashSet<string> _authorizedViewers = new();
 
     public ChatHub(VisitorTracker tracker)
     {
@@ -41,15 +48,17 @@ public class ChatHub : Hub
     {
         var connectionId = Context.ConnectionId;
         var ip = Context.GetHttpContext()?.Connection.RemoteIpAddress?.ToString() ?? "Unknown";
-        _tracker.AddVisitor(connectionId, ip);
-        await Clients.All.SendAsync("UserConnected", connectionId);
+        var userAgent = Context.GetHttpContext()?.Request.Headers["User-Agent"].ToString() ?? "";
+        _tracker.AddVisitor(connectionId, ip, userAgent);
+        await Clients.Caller.SendAsync("SetConnectionId", connectionId);
+        await Clients.All.SendAsync("VisitorCountUpdated", _tracker.Count());
         await base.OnConnectedAsync();
     }
 
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
         _tracker.RemoveVisitor(Context.ConnectionId);
-        await Clients.All.SendAsync("UserDisconnected", Context.ConnectionId);
+        await Clients.All.SendAsync("VisitorCountUpdated", _tracker.Count());
         await base.OnDisconnectedAsync(exception);
     }
 
@@ -64,7 +73,7 @@ public class ChatHub : Hub
     {
         var connectionId = Context.ConnectionId;
         _tracker.UpdateLocation(connectionId, latitude, longitude, city);
-        await Clients.All.SendAsync("LocationUpdated", connectionId, latitude, longitude, city);
+        await Clients.All.SendAsync("LocationUpdated");
     }
 
     public async Task GetChatHistory()
@@ -72,82 +81,108 @@ public class ChatHub : Hub
         var history = _tracker.GetMessages();
         await Clients.Caller.SendAsync("ChatHistory", history);
     }
+
+    public async Task<bool> LoginAsAdmin(string password)
+    {
+        if (password == "elias2026")
+        {
+            _admins.Add(Context.ConnectionId);
+            await Clients.Caller.SendAsync("AdminStatusChanged", true);
+            await UpdateVisitorListForCaller();
+            return true;
+        }
+        return false;
+    }
+
+    public async Task AddAuthorizedViewer(string connectionId)
+    {
+        if (_admins.Contains(Context.ConnectionId))
+        {
+            _authorizedViewers.Add(connectionId);
+            await Clients.Client(connectionId).SendAsync("AuthorizedStatusChanged", true);
+            await Clients.Client(connectionId).SendAsync("VisitorList", _tracker.GetLocations());
+        }
+    }
+
+    public async Task RemoveAuthorizedViewer(string connectionId)
+    {
+        if (_admins.Contains(Context.ConnectionId))
+        {
+            _authorizedViewers.Remove(connectionId);
+            await Clients.Client(connectionId).SendAsync("AuthorizedStatusChanged", false);
+        }
+    }
+
+    public async Task RequestVisitorList()
+    {
+        if (_admins.Contains(Context.ConnectionId) || _authorizedViewers.Contains(Context.ConnectionId))
+        {
+            await UpdateVisitorListForCaller();
+        }
+    }
+
+    public async Task<bool> IsAuthorized()
+    {
+        return _admins.Contains(Context.ConnectionId) || _authorizedViewers.Contains(Context.ConnectionId);
+    }
+
+    private async Task UpdateVisitorListForCaller()
+    {
+        var visitors = _tracker.GetLocations();
+        await Clients.Caller.SendAsync("VisitorList", visitors);
+    }
 }
 
 // ============================================
-// VISITOR TRACKER — LƯU VỊ TRÍ & TIN NHẮN
+// VISITOR TRACKER
 // ============================================
 public class VisitorTracker
 {
     private readonly ConcurrentDictionary<string, Visitor> _visitors = new();
     private readonly List<ChatMessage> _messages = new();
-    private readonly string _logPath = "visitors_log.json";
 
-    public void AddVisitor(string connectionId, string ip)
+    public void AddVisitor(string connectionId, string ip, string userAgent)
     {
-        var visitor = new Visitor
+        _visitors[connectionId] = new Visitor
         {
             ConnectionId = connectionId,
             IpAddress = ip,
-            ConnectedAt = DateTime.Now,
-            UserAgent = "Unknown"
+            UserAgent = userAgent,
+            ConnectedAt = DateTime.Now
         };
-        _visitors[connectionId] = visitor;
-        SaveLog();
     }
 
     public void RemoveVisitor(string connectionId)
     {
         _visitors.TryRemove(connectionId, out _);
-        SaveLog();
     }
 
     public void UpdateLocation(string connectionId, double lat, double lng, string city)
     {
-        if (_visitors.TryGetValue(connectionId, out var visitor))
+        if (_visitors.TryGetValue(connectionId, out var v))
         {
-            visitor.Latitude = lat;
-            visitor.Longitude = lng;
-            visitor.City = city;
-            SaveLog();
+            v.Latitude = lat;
+            v.Longitude = lng;
+            v.City = city;
         }
     }
 
     public void AddMessage(string connectionId, string user, string message)
     {
-        var msg = new ChatMessage
+        _messages.Add(new ChatMessage
         {
             ConnectionId = connectionId,
             User = user,
             Message = message,
             Timestamp = DateTime.Now
-        };
-        _messages.Add(msg);
+        });
         if (_messages.Count > 500) _messages.RemoveAt(0);
     }
 
-    public List<ChatMessage> GetMessages() => _messages;
-
-    public List<Visitor> GetAll()
-    {
-        return new List<Visitor>(_visitors.Values);
-    }
-
-    public List<Visitor> GetLocations()
-    {
-        return new List<Visitor>(_visitors.Values)
-            .FindAll(v => v.Latitude != 0 || v.Longitude != 0);
-    }
-
-    private void SaveLog()
-    {
-        try
-        {
-            var data = new { Visitors = _visitors.Values, Messages = _messages };
-            File.WriteAllText(_logPath, JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true }));
-        }
-        catch { }
-    }
+    public int Count() => _visitors.Count;
+    public List<ChatMessage> GetMessages() => new(_messages);
+    public List<Visitor> GetAll() => new(_visitors.Values);
+    public List<Visitor> GetLocations() => new List<Visitor>(_visitors.Values).FindAll(v => v.IpAddress != "Unknown");
 }
 
 public class Visitor
@@ -157,7 +192,7 @@ public class Visitor
     public string UserAgent { get; set; } = "";
     public double Latitude { get; set; }
     public double Longitude { get; set; }
-    public string City { get; set; } = "";
+    public string City { get; set; } = "Unknown";
     public DateTime ConnectedAt { get; set; }
 }
 

@@ -24,3 +24,5 @@ C:\Users\DELL\Documents\EliasConnect\obj\Debug\net8.0\refint\EliasConnect.dll
 C:\Users\DELL\Documents\EliasConnect\obj\Debug\net8.0\EliasConnect.pdb
 C:\Users\DELL\Documents\EliasConnect\obj\Debug\net8.0\EliasConnect.genruntimeconfig.cache
 C:\Users\DELL\Documents\EliasConnect\obj\Debug\net8.0\ref\EliasConnect.dll
+C:\Users\DELL\Documents\EliasConnect\obj\Debug\net8.0\EliasConnect.sourcelink.json
+C:\Users\DELL\Documents\EliasConnect\bin\Debug\net8.0\visitors_log.json
