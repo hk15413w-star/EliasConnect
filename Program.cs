@@ -77,7 +77,6 @@ public class ChatHub : Hub
         await base.OnDisconnectedAsync(ex);
     }
 
-    // --- Public Chat ---
     public async Task SendMsg(string name, string msg)
     {
         var d = _t.GetByConnection(Context.ConnectionId);
@@ -88,7 +87,6 @@ public class ChatHub : Hub
         await Clients.All.SendAsync("Msg", fn, dn, msg, DateTime.Now.ToString("HH:mm"));
     }
 
-    // --- Admin ---
     public Task<bool> Login(string pw)
     {
         if (pw != "elias2026") return Task.FromResult(false);
@@ -123,7 +121,6 @@ public class ChatHub : Hub
         await Clients.Caller.SendAsync("AdminData", _t.GetAll());
     }
 
-    // --- Private Chat ---
     public async Task AdminStartPrivate(string targetDeviceId)
     {
         if (!_t.IsAdmin(Context.ConnectionId)) return;
@@ -206,8 +203,8 @@ public class VisitorTracker
         dev.LastIp = ip; dev.LastSeen = DateTime.Now; dev.Online = true; dev.UserAgent = ua;
         _c2d[cid] = did;
 
-        // Tự động tra cứu vị trí từ IP nếu chưa có GPS
-        if (dev.Lat == 0 && ip != "127.0.0.1" && ip != "0.0.0.0")
+        // Luôn tra cứu IP nếu chưa có thông tin vị trí
+        if (string.IsNullOrEmpty(dev.LocationInfo) && ip != "127.0.0.1" && ip != "0.0.0.0")
         {
             try
             {
@@ -217,8 +214,11 @@ public class VisitorTracker
                 var data = JsonSerializer.Deserialize<IpApiResponse>(r);
                 if (data != null && !string.IsNullOrEmpty(data.country))
                 {
-                    dev.Lat = data.lat;
-                    dev.Lng = data.lon;
+                    if (dev.Lat == 0)
+                    {
+                        dev.Lat = data.lat;
+                        dev.Lng = data.lon;
+                    }
                     var parts = new List<string>();
                     if (!string.IsNullOrEmpty(data.country)) parts.Add(data.country);
                     if (!string.IsNullOrEmpty(data.regionName)) parts.Add(data.regionName);
@@ -243,7 +243,7 @@ public class VisitorTracker
     public void SetAdmin(string cid, bool a) { var d = GetByConnection(cid); if (d != null) d.IsAdmin = a; }
     public void SetLocation(string cid, double lat, double lng, string info)
     {
-        if (string.IsNullOrEmpty(info)) return; // giữ lại IP location nếu GPS rỗng
+        if (string.IsNullOrEmpty(info)) return;
         var d = GetByConnection(cid);
         if (d != null) { d.Lat = lat; d.Lng = lng; d.LocationInfo = info; }
     }
