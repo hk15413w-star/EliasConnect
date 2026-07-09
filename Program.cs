@@ -206,7 +206,7 @@ public class VisitorTracker
         dev.LastIp = ip; dev.LastSeen = DateTime.Now; dev.Online = true; dev.UserAgent = ua;
         _c2d[cid] = did;
 
-        // IP Geolocation tự động - dùng ip-api.com (HTTPS)
+        // Tự động tra cứu vị trí từ IP nếu chưa có GPS
         if (dev.Lat == 0 && ip != "127.0.0.1" && ip != "0.0.0.0")
         {
             try
@@ -219,15 +219,15 @@ public class VisitorTracker
                 {
                     dev.Lat = data.lat;
                     dev.Lng = data.lon;
-                    // Format: country, region, city
                     var parts = new List<string>();
                     if (!string.IsNullOrEmpty(data.country)) parts.Add(data.country);
                     if (!string.IsNullOrEmpty(data.regionName)) parts.Add(data.regionName);
                     if (!string.IsNullOrEmpty(data.city)) parts.Add(data.city);
                     dev.LocationInfo = string.Join(", ", parts);
+                    Console.WriteLine($"[GEO] {ip} -> {dev.LocationInfo}");
                 }
             }
-            catch { }
+            catch (Exception ex) { Console.WriteLine($"[GEO] Error: {ex.Message}"); }
         }
     }
 
@@ -242,7 +242,11 @@ public class VisitorTracker
 
     public void SetAdmin(string cid, bool a) { var d = GetByConnection(cid); if (d != null) d.IsAdmin = a; }
     public void SetLocation(string cid, double lat, double lng, string info)
-    { if (string.IsNullOrEmpty(info)) return; var d = GetByConnection(cid); if (d != null) { d.Lat = lat; d.Lng = lng; d.LocationInfo = info; } }
+    {
+        if (string.IsNullOrEmpty(info)) return; // giữ lại IP location nếu GPS rỗng
+        var d = GetByConnection(cid);
+        if (d != null) { d.Lat = lat; d.Lng = lng; d.LocationInfo = info; }
+    }
 
     public void AddMessage(string u, string dn, string m)
     { lock (_l) { _msg.Add(new ChatMsg { User = u, DeviceName = dn, Message = m, Timestamp = DateTime.Now }); if (_msg.Count > 500) _msg.RemoveAt(0); } }
