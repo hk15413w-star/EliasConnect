@@ -46,46 +46,20 @@
         .private-bar{display:flex;align-items:center;gap:8px;padding:8px 16px;background:#12121a;border-bottom:1px solid #252535}
         .private-bar select{flex:1;background:#1a1a28;color:#fff;border:1px solid #333;padding:8px;border-radius:6px}
         .private-bar button{background:#ff4444;color:#fff;border:none;padding:6px 12px;border-radius:4px;cursor:pointer;font-size:.75rem}
-        .input-area{background:#12121a;padding:12px 16px;border-top:1px solid #252535;display:flex;gap:8px}
+        .input-area{background:#12121a;padding:12px 16px;border-top:1px solid #252535;display:flex;gap:8px;align-items:center}
         .input-area input{flex:1;background:#1a1a28;border:1px solid #333;padding:10px 12px;color:#fff;border-radius:8px;font-size:.85rem;min-width:0}
         .input-area input:focus{outline:none;border-color:#50cd32}
         .input-area button{background:#50cd32;color:#000;border:none;padding:10px 16px;border-radius:8px;cursor:pointer;font-weight:bold;white-space:nowrap;font-size:.85rem}
+        .save-check{display:flex;align-items:center;gap:4px;color:#aaa;font-size:.7rem;white-space:nowrap}
+        .save-check input{accent-color:#50cd32}
         .toggle-btn{display:none;background:#50cd32;color:#000;border:none;padding:6px 12px;border-radius:6px;font-size:.8rem;cursor:pointer;font-weight:bold}
         .overlay{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.7);z-index:99}
         .overlay.show{display:block}
         .sidebar.mobile{display:flex!important;position:fixed;top:0;left:0;height:100%;z-index:100;width:300px}
-
-        /* === POPUP CHÀO MỪNG === */
-        .welcome-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);z-index:999;display:flex;justify-content:center;align-items:center}
-        .welcome-popup{background:#12121a;border:1px solid #252535;border-radius:20px;padding:40px 30px;text-align:center;max-width:420px;width:90%;animation:popIn 0.4s ease}
-        @keyframes popIn{from{transform:scale(0.85);opacity:0}to{transform:scale(1);opacity:1}}
-        .welcome-popup .icon{font-size:4rem;margin-bottom:16px;animation:bounce 2s infinite}
-        @keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-15px)}}
-        .welcome-popup h2{color:#50cd32;font-size:1.5rem;margin-bottom:8px}
-        .welcome-popup p{color:#aaa;font-size:0.9rem;margin-bottom:12px;line-height:1.5}
-        .welcome-popup .hint{color:#666;font-size:0.8rem;margin-bottom:20px}
-        .welcome-popup .hint kbd{background:#1a1a28;border:1px solid #333;border-radius:4px;padding:3px 8px;font-size:0.8rem;color:#50cd32;font-family:inherit}
-        .welcome-popup .btn-enter{background:#50cd32;color:#000;border:none;padding:12px 30px;border-radius:8px;font-weight:bold;font-size:1rem;cursor:pointer;transition:0.2s}
-        .welcome-popup .btn-enter:hover{background:#60dd42;transform:scale(1.05)}
-        .welcome-popup .btn-skip{background:transparent;color:#666;border:none;padding:10px 20px;border-radius:8px;font-size:0.8rem;cursor:pointer;margin-top:8px}
-
         @media(max-width:768px){.sidebar{display:none}.toggle-btn{display:block}}
     </style>
 </head>
 <body>
-
-<!-- ========== POPUP CHÀO MỪNG ========== -->
-<div class="welcome-overlay" id="welcomeOverlay">
-    <div class="welcome-popup">
-        <div class="icon">🌍</div>
-        <h2>Welcome to Elias Connect</h2>
-        <p>bạn có thể chat với những người truy cập khác.</p>
-        <p class="hint">Nhấn <kbd>Enter</kbd> để tiếp tục</p>
-        <button class="btn-enter" id="btnEnter">Bấm Enter để vào</button>
-        <br>
-        <button class="btn-skip" id="btnSkip">Bỏ qua</button>
-    </div>
-</div>
 
 <div class="overlay" id="overlay" onclick="closeSidebar()"></div>
 
@@ -122,6 +96,7 @@
     <div class="input-area">
         <input type="text" id="nameInput" placeholder="Name..." value="Guest" style="max-width:100px">
         <input type="text" id="msgInput" placeholder="Message..." onkeypress="if(event.key==='Enter')sendMsg()">
+        <label class="save-check"><input type="checkbox" id="saveMsg" checked> Lưu 2 ngày</label>
         <button onclick="sendMsg()">Send</button>
     </div>
 </div>
@@ -132,192 +107,99 @@ var isAdmin = false, myDeviceId = "", currentTab = 'public', activePrivateTarget
 var privateCache = {};
 var allVisitors = [];
 
-// ========== POPUP CHÀO MỪNG ==========
-var welcomeOverlay = document.getElementById('welcomeOverlay');
-var btnEnter = document.getElementById('btnEnter');
-var btnSkip = document.getElementById('btnSkip');
-var popupClosed = false;
-
-function closeWelcomePopup() {
-    if (popupClosed) return;
-    popupClosed = true;
-    welcomeOverlay.style.animation = 'fadeOut 0.3s ease forwards';
-    setTimeout(function() { welcomeOverlay.style.display = 'none'; }, 300);
-    // Yêu cầu quyền vị trí sau khi đóng popup
-    requestLocation();
-}
-
-// Nút "Bấm Enter để vào"
-btnEnter.addEventListener('click', closeWelcomePopup);
-btnSkip.addEventListener('click', closeWelcomePopup);
-
-// Lắng nghe phím Enter trên toàn bộ trang
-document.addEventListener('keydown', function(e) {
-    if (!popupClosed && e.key === 'Enter') {
-        e.preventDefault();
-        closeWelcomePopup();
-    }
-});
-
-function requestLocation() {
-    if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(async function(p) {
-            var info = "";
-            try {
-                var r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${p.coords.latitude}&lon=${p.coords.longitude}`);
-                var d = await r.json();
-                if(d.address) info = [d.address.country, d.address.state, d.address.city||d.address.town].filter(Boolean).join(", ");
-            } catch(e) {}
-            conn.invoke("UpdateLoc", p.coords.latitude, p.coords.longitude, info);
-        }, function() {
-            console.log("Vị trí bị từ chối (popup trình duyệt)");
-        });
-    }
-}
-
-// ========== SIGNALR ==========
 conn.start().then(function() {
     console.log("SignalR connected");
-}).catch(function(err) { console.error(err); });
-
-conn.on("Init", function(ip, did) {
-    document.getElementById("myip").textContent = ip || "Unknown";
-    document.getElementById("mydevice").textContent = did || "Unknown";
-    myDeviceId = did;
+    if (navigator.geolocation) navigator.geolocation.getCurrentPosition(async p => {
+        var info = "";
+        try { var r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${p.coords.latitude}&lon=${p.coords.longitude}`);
+              var d = await r.json(); if(d.address) info = [d.address.country,d.address.state,d.address.city||d.address.town].filter(Boolean).join(", "); } catch {}
+        conn.invoke("UpdateLoc", p.coords.latitude, p.coords.longitude, info);
+    }, ()=>{});
 });
 
-conn.on("Msg", function(u, dn, m, t) { addMsgToPanel('public', u, m, t); });
-conn.on("History", function(h) { if(h) h.forEach(function(m) { addMsgToPanel('public', m.User, m.Message, new Date(m.Timestamp).toLocaleTimeString()); }); });
-conn.on("AdminData", function(v) { allVisitors = v; renderVisitors(v); });
-conn.on("PrivateOpened", function(targetId, history) {
+conn.on("Init", (ip, did) => { document.getElementById("myip").textContent=ip||"Unknown"; document.getElementById("mydevice").textContent=did||"Unknown"; myDeviceId=did; });
+conn.on("Msg", (u,dn,m,t) => { addMsgToPanel('public', u, m, t); });
+conn.on("History", h => { if(h) h.forEach(m => addMsgToPanel('public', m.User, m.Message, new Date(m.Timestamp).toLocaleTimeString())); });
+conn.on("AdminData", v => { allVisitors=v; renderVisitors(v); });
+conn.on("PrivateOpened", (targetId, history) => {
     openPrivateTab(targetId);
     document.getElementById("privateMessages").innerHTML = '';
-    if(history) history.forEach(function(m) { addMsgToPanel('private', m.Sender, m.Message, new Date(m.Timestamp).toLocaleTimeString()); });
+    if(history) history.forEach(m => addMsgToPanel('private', m.Sender, m.Message, new Date(m.Timestamp).toLocaleTimeString()));
 });
-conn.on("AdminStartedChat", function(adminName) {
-    if(isAdmin) return;
-    document.getElementById("tabPrivate").style.display = 'inline-block';
-    activePrivateTarget = adminName;
-    switchTab('private');
+conn.on("AdminStartedChat", (adminName) => { if(isAdmin) return; document.getElementById("tabPrivate").style.display='inline-block'; activePrivateTarget=adminName; switchTab('private'); });
+conn.on("PrivateMsg", (targetId, sender, msg, time) => {
+    if(!privateCache[targetId]) privateCache[targetId]=[];
+    privateCache[targetId].push({sender,msg,time});
+    if(activePrivateTarget===targetId || (activePrivateTarget===sender && !isAdmin)) addMsgToPanel('private', sender, msg, time);
 });
-conn.on("PrivateMsg", function(targetId, sender, msg, time) {
-    if(!privateCache[targetId]) privateCache[targetId] = [];
-    privateCache[targetId].push({sender: sender, msg: msg, time: time});
-    if(activePrivateTarget === targetId || (activePrivateTarget === sender && !isAdmin)) {
-        addMsgToPanel('private', sender, msg, time);
-    }
-});
-conn.on("PrivateEnded", function() {
-    activePrivateTarget = null;
-    document.getElementById("privateBar").style.display = 'none';
-    if(currentTab === 'private') switchTab('public');
-});
+conn.on("PrivateEnded", () => { activePrivateTarget=null; document.getElementById("privateBar").style.display='none'; if(currentTab==='private') switchTab('public'); });
 
 function addMsgToPanel(panelType, user, msg, time) {
-    var panel = document.getElementById(panelType === 'public' ? 'publicMessages' : 'privateMessages');
-    var div = document.createElement("div");
-    div.className = "msg";
-    var isAdminMsg = user.indexOf('[ADMIN]') === 0;
-    div.innerHTML = '<span class="uname ' + (isAdminMsg ? 'admin' : 'normal') + '">' + user + '</span><span class="time">' + time + '</span><div class="text">' + msg + '</div>';
-    panel.appendChild(div);
-    panel.scrollTop = panel.scrollHeight;
+    var panel = document.getElementById(panelType==='public'?'publicMessages':'privateMessages');
+    var div = document.createElement("div"); div.className = "msg";
+    div.innerHTML = `<span class="uname ${user.startsWith('[ADMIN]')?'admin':'normal'}">${user}</span><span class="time">${time}</span><div class="text">${msg}</div>`;
+    panel.appendChild(div); panel.scrollTop = panel.scrollHeight;
 }
 
-function sendMsg() {
-    var m = document.getElementById("msgInput").value.trim();
-    if(!m) return;
-    if(currentTab === 'private' && activePrivateTarget) {
+function sendMsg(){
+    var m=document.getElementById("msgInput").value.trim(); if(!m) return;
+    var save = document.getElementById("saveMsg").checked;
+    if(currentTab==='private' && activePrivateTarget){
         if(isAdmin) conn.invoke("AdminSendPrivate", activePrivateTarget, m);
         else conn.invoke("VisitorSendPrivate", m);
     } else {
-        var n = document.getElementById("nameInput").value || "Guest";
-        conn.invoke("SendMsg", n, m);
+        var n=document.getElementById("nameInput").value||"Guest";
+        conn.invoke("SendMsg", n, m, save);
     }
-    document.getElementById("msgInput").value = '';
+    document.getElementById("msgInput").value='';
 }
 
-function switchTab(tab) {
-    currentTab = tab;
-    document.getElementById("tabPublic").classList.toggle("active", tab === 'public');
-    document.getElementById("tabPrivate").classList.toggle("active", tab === 'private');
-    document.getElementById("publicMessages").classList.toggle("active", tab === 'public');
-    document.getElementById("privateMessages").classList.toggle("active", tab === 'private');
-    if(tab === 'public') {
-        document.getElementById("privateBar").style.display = 'none';
-    } else {
-        if(isAdmin) document.getElementById("privateBar").style.display = 'flex';
-        document.getElementById("privateMessages").scrollTop = document.getElementById("privateMessages").scrollHeight;
-    }
+function switchTab(tab){
+    currentTab=tab;
+    document.getElementById("tabPublic").classList.toggle("active", tab==='public');
+    document.getElementById("tabPrivate").classList.toggle("active", tab==='private');
+    document.getElementById("publicMessages").classList.toggle("active", tab==='public');
+    document.getElementById("privateMessages").classList.toggle("active", tab==='private');
+    if(tab==='public') document.getElementById("privateBar").style.display='none';
+    else { if(isAdmin) document.getElementById("privateBar").style.display='flex'; document.getElementById("privateMessages").scrollTop=document.getElementById("privateMessages").scrollHeight; }
 }
 
-function openPrivateTab(targetId) {
-    activePrivateTarget = targetId;
-    document.getElementById("tabPrivate").style.display = 'inline-block';
-    if(isAdmin) {
-        document.getElementById("privateBar").style.display = 'flex';
-        document.getElementById("privateSelect").value = targetId;
-    }
+function openPrivateTab(targetId){
+    activePrivateTarget=targetId; document.getElementById("tabPrivate").style.display='inline-block';
+    if(isAdmin){ document.getElementById("privateBar").style.display='flex'; document.getElementById("privateSelect").value=targetId; }
     switchTab('private');
 }
+function onPrivateSelect(){ var v=document.getElementById("privateSelect").value; if(v) conn.invoke("AdminStartPrivate", v); }
+function endPrivateChat(){ if(activePrivateTarget) conn.invoke("EndPrivate", activePrivateTarget); }
 
-function onPrivateSelect() {
-    var v = document.getElementById("privateSelect").value;
-    if(v) conn.invoke("AdminStartPrivate", v);
-}
-
-function endPrivateChat() {
-    if(activePrivateTarget) conn.invoke("EndPrivate", activePrivateTarget);
-}
-
-async function login() {
+async function login(){
     var ok = await conn.invoke("Login", document.getElementById("password").value);
-    if(!ok) { alert("Wrong password!"); return; }
-    isAdmin = true;
-    document.getElementById("loginbox").style.display = "none";
-    document.getElementById("clearAllBtn").style.display = "block";
-    document.getElementById("tabPrivate").style.display = 'inline-block';
-    fetchVisitors();
+    if(!ok){alert("Wrong password!");return;}
+    isAdmin=true; document.getElementById("loginbox").style.display="none"; document.getElementById("clearAllBtn").style.display="block";
+    document.getElementById("tabPrivate").style.display='inline-block'; fetchVisitors();
 }
+async function fetchVisitors(){ var r=await fetch("/api/visitors"); renderVisitors(await r.json()); }
 
-async function fetchVisitors() {
-    var r = await fetch("/api/visitors");
-    renderVisitors(await r.json());
-}
-
-function renderVisitors(v) {
-    allVisitors = v || [];
-    var l = document.getElementById("visitorList");
-    if(!allVisitors.length) {
-        l.innerHTML = '<div style="color:#555;font-size:.8rem;padding:20px;text-align:center">No visitors</div>';
-        return;
-    }
-    var h = "", sel = document.getElementById("privateSelect");
-    sel.innerHTML = '<option value="">-- Select --</option>';
-    allVisitors.forEach(function(v) {
-        var ip = v.lastIp || v.firstIp || "Unknown";
-        var name = v.nickname || v.deviceId;
-        var on = v.online;
-        var locationInfo = v.locationInfo || "";
-        h += '<div class="card"><span class="dot ' + (on ? 'on' : 'off') + '"></span><span class="devname">' + name + '</span>';
-        if(isAdmin) {
-            h += '<div class="actions">';
-            if(on && v.deviceId !== myDeviceId) h += '<button onclick="conn.invoke(\'AdminStartPrivate\',\'' + v.deviceId + '\')">Private Chat</button>';
-            h += '<button class="danger" onclick="conn.invoke(\'DeleteVisitor\',\'' + v.deviceId + '\')">Delete</button></div>';
-        }
-        h += '<span class="ip">IP: ' + ip + '</span><br>';
-        if(locationInfo) h += '<span class="loc">📍 ' + locationInfo + '</span><br>';
-        if(v.lat && v.lng) h += '<span class="geo">GPS: ' + Number(v.lat).toFixed(4) + ', ' + Number(v.lng).toFixed(4) + '</span><br>';
-        h += '<span class="time">' + new Date(v.lastSeen).toLocaleTimeString() + '</span></div>';
-        if(isAdmin && on && v.deviceId !== myDeviceId) sel.innerHTML += '<option value="' + v.deviceId + '">' + name + '</option>';
+function renderVisitors(v){
+    allVisitors=v||[]; var l=document.getElementById("visitorList");
+    if(!allVisitors.length){l.innerHTML='<div style="color:#555;font-size:.8rem;padding:20px;text-align:center">No visitors</div>';return;}
+    var h="", sel=document.getElementById("privateSelect"); sel.innerHTML='<option value="">-- Select --</option>';
+    allVisitors.forEach(v=>{
+        var ip=v.lastIp||v.firstIp||"Unknown", name=v.nickname||v.deviceId, on=v.online, loc=v.locationInfo||"";
+        h+=`<div class="card"><span class="dot ${on?'on':'off'}"></span><span class="devname">${name}</span>`;
+        if(isAdmin){ h+=`<div class="actions">`; if(on && v.deviceId!==myDeviceId) h+=`<button onclick="conn.invoke('AdminStartPrivate','${v.deviceId}')">Private Chat</button>`; h+=`<button class="danger" onclick="conn.invoke('DeleteVisitor','${v.deviceId}')">Delete</button></div>`; }
+        h+=`<span class="ip">IP: ${ip}</span><br>`; if(loc) h+=`<span class="loc">📍 ${loc}</span><br>`;
+        if(v.lat&&v.lng) h+=`<span class="geo">GPS: ${v.lat.toFixed(4)}, ${v.lng.toFixed(4)}</span><br>`;
+        h+=`<span class="time">${new Date(v.lastSeen).toLocaleTimeString()}</span></div>`;
+        if(isAdmin && on && v.deviceId!==myDeviceId) sel.innerHTML+=`<option value="${v.deviceId}">${name}</option>`;
     });
-    l.innerHTML = h;
+    l.innerHTML=h;
 }
 
-setInterval(function() { if(isAdmin) fetchVisitors(); }, 10000);
-
-function openSidebar() { document.getElementById("sidebar").classList.add("mobile"); document.getElementById("overlay").classList.add("show"); }
-function closeSidebar() { document.getElementById("sidebar").classList.remove("mobile"); document.getElementById("overlay").classList.remove("show"); }
-async function clearAll() { if(!confirm("Clear all?")) return; await conn.invoke("ClearAll"); }
+setInterval(()=>{ if(isAdmin) fetchVisitors(); }, 10000);
+function openSidebar(){ document.getElementById("sidebar").classList.add("mobile"); document.getElementById("overlay").classList.add("show"); }
+function closeSidebar(){ document.getElementById("sidebar").classList.remove("mobile"); document.getElementById("overlay").classList.remove("show"); }
+async function clearAll(){ if(!confirm("Clear all?")) return; await conn.invoke("ClearAll"); }
 </script>
 </body>
 </html>

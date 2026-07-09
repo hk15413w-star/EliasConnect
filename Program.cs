@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Security.Cryptography;
@@ -24,6 +25,22 @@ app.UseStaticFiles();
 
 app.MapHub<ChatHub>("/chat");
 app.MapGet("/api/visitors", (VisitorTracker t) => t.GetAll());
+
+// Tự động load tin nhắn cũ khi khởi động
+var tracker = app.Services.GetRequiredService<VisitorTracker>();
+tracker.LoadFromFile();
+
+// Tự động save mỗi 5 phút + xóa tin nhắn cũ hơn 2 ngày
+_ = Task.Run(async () =>
+{
+    while (true)
+    {
+        await Task.Delay(TimeSpan.FromMinutes(5));
+        tracker.CleanOldMessages(2); // Xóa tin nhắn > 2 ngày
+        tracker.SaveToFile();
+        Console.WriteLine("[SAVE] Messages saved + cleaned");
+    }
+});
 
 app.Run();
 
@@ -77,13 +94,13 @@ public class ChatHub : Hub
         await base.OnDisconnectedAsync(ex);
     }
 
-    public async Task SendMsg(string name, string msg)
+    public async Task SendMsg(string name, string msg, bool save)
     {
         var d = _t.GetByConnection(Context.ConnectionId);
         var dn = d?.DisplayName ?? "Unknown";
         var admin = d?.IsAdmin ?? false;
         var fn = admin ? $"[ADMIN] {name}" : name;
-        _t.AddMessage(fn, dn, msg);
+        _t.AddMessage(fn, dn, msg, save);
         await Clients.All.SendAsync("Msg", fn, dn, msg, DateTime.Now.ToString("HH:mm"));
     }
 
@@ -194,6 +211,7 @@ public class VisitorTracker
     private readonly object _l = new();
     private readonly IHttpClientFactory _hf;
     private readonly ConcurrentDictionary<string, string> _sessions = new();
+    private readonly string _savePath = "messages.json";
 
     public VisitorTracker(IHttpClientFactory hf) => _hf = hf;
 
@@ -203,31 +221,24 @@ public class VisitorTracker
         dev.LastIp = ip; dev.LastSeen = DateTime.Now; dev.Online = true; dev.UserAgent = ua;
         _c2d[cid] = did;
 
-        // Luôn tra cứu IP nếu chưa có thông tin vị trí
         if (string.IsNullOrEmpty(dev.LocationInfo) && ip != "127.0.0.1" && ip != "0.0.0.0")
         {
             try
             {
-                var c = _hf.CreateClient();
-                c.DefaultRequestHeaders.Add("User-Agent", "EliasConnect/1.0");
+                var c = _hf.CreateClient(); c.DefaultRequestHeaders.Add("User-Agent", "EliasConnect/1.0");
                 var r = await c.GetStringAsync($"https://ip-api.com/json/{ip}?fields=country,regionName,city,lat,lon");
                 var data = JsonSerializer.Deserialize<IpApiResponse>(r);
                 if (data != null && !string.IsNullOrEmpty(data.country))
                 {
-                    if (dev.Lat == 0)
-                    {
-                        dev.Lat = data.lat;
-                        dev.Lng = data.lon;
-                    }
+                    if (dev.Lat == 0) { dev.Lat = data.lat; dev.Lng = data.lon; }
                     var parts = new List<string>();
                     if (!string.IsNullOrEmpty(data.country)) parts.Add(data.country);
                     if (!string.IsNullOrEmpty(data.regionName)) parts.Add(data.regionName);
                     if (!string.IsNullOrEmpty(data.city)) parts.Add(data.city);
                     dev.LocationInfo = string.Join(", ", parts);
-                    Console.WriteLine($"[GEO] {ip} -> {dev.LocationInfo}");
                 }
             }
-            catch (Exception ex) { Console.WriteLine($"[GEO] Error: {ex.Message}"); }
+            catch { }
         }
     }
 
@@ -242,14 +253,17 @@ public class VisitorTracker
 
     public void SetAdmin(string cid, bool a) { var d = GetByConnection(cid); if (d != null) d.IsAdmin = a; }
     public void SetLocation(string cid, double lat, double lng, string info)
-    {
-        if (string.IsNullOrEmpty(info)) return;
-        var d = GetByConnection(cid);
-        if (d != null) { d.Lat = lat; d.Lng = lng; d.LocationInfo = info; }
-    }
+    { if (string.IsNullOrEmpty(info)) return; var d = GetByConnection(cid); if (d != null) { d.Lat = lat; d.Lng = lng; d.LocationInfo = info; } }
 
-    public void AddMessage(string u, string dn, string m)
-    { lock (_l) { _msg.Add(new ChatMsg { User = u, DeviceName = dn, Message = m, Timestamp = DateTime.Now }); if (_msg.Count > 500) _msg.RemoveAt(0); } }
+    public void AddMessage(string u, string dn, string m, bool save = true)
+    {
+        lock (_l)
+        {
+            var msg = new ChatMsg { User = u, DeviceName = dn, Message = m, Timestamp = DateTime.Now, Save = save };
+            _msg.Add(msg);
+            if (_msg.Count > 1000) _msg.RemoveAt(0);
+        }
+    }
 
     public void AddPrivateMessage(string aDev, string vDev, string sender, string msg)
     {
@@ -277,7 +291,51 @@ public class VisitorTracker
     public void SetNickname(string did, string n) { if (string.IsNullOrWhiteSpace(n)) _nick.TryRemove(did, out _); else _nick[did] = n; }
 
     public List<Device> GetAll() => _d.Values.OrderByDescending(x => x.LastSeen).Select(x => { x.Nickname = _nick.TryGetValue(x.DeviceId, out var n) ? n : ""; return x; }).ToList();
-    public List<ChatMsg> GetMessages() { lock (_l) return _msg.ToList(); }
+
+    public List<ChatMsg> GetMessages()
+    {
+        lock (_l) return _msg.Where(m => m.Save).ToList();
+    }
+
+    // Lưu tin nhắn ra file JSON
+    public void SaveToFile()
+    {
+        try
+        {
+            List<ChatMsg> toSave;
+            lock (_l) { toSave = _msg.Where(m => m.Save).ToList(); }
+            var json = JsonSerializer.Serialize(toSave);
+            File.WriteAllText(_savePath, json);
+            Console.WriteLine($"[SAVE] {toSave.Count} messages saved");
+        }
+        catch (Exception ex) { Console.WriteLine($"[SAVE] Error: {ex.Message}"); }
+    }
+
+    // Tải tin nhắn từ file JSON
+    public void LoadFromFile()
+    {
+        try
+        {
+            if (File.Exists(_savePath))
+            {
+                var json = File.ReadAllText(_savePath);
+                var loaded = JsonSerializer.Deserialize<List<ChatMsg>>(json);
+                if (loaded != null)
+                {
+                    lock (_l) { _msg.Clear(); _msg.AddRange(loaded); }
+                    Console.WriteLine($"[LOAD] {loaded.Count} messages loaded");
+                }
+            }
+        }
+        catch (Exception ex) { Console.WriteLine($"[LOAD] Error: {ex.Message}"); }
+    }
+
+    // Xóa tin nhắn cũ hơn số ngày chỉ định
+    public void CleanOldMessages(int days)
+    {
+        var cutoff = DateTime.Now.AddDays(-days);
+        lock (_l) { _msg.RemoveAll(m => m.Timestamp < cutoff); }
+    }
 }
 
 public class Device
@@ -295,6 +353,14 @@ public class Device
     public string DisplayName => string.IsNullOrEmpty(Nickname) ? DeviceName : Nickname;
 }
 
-public class ChatMsg { public string User { get; set; } = ""; public string DeviceName { get; set; } = ""; public string Message { get; set; } = ""; public DateTime Timestamp { get; set; } }
+public class ChatMsg
+{
+    public string User { get; set; } = "";
+    public string DeviceName { get; set; } = "";
+    public string Message { get; set; } = "";
+    public DateTime Timestamp { get; set; }
+    public bool Save { get; set; } = true;
+}
+
 public class PrivateMsg { public string Sender { get; set; } = ""; public string Message { get; set; } = ""; public DateTime Timestamp { get; set; } }
 public class IpApiResponse { public string country { get; set; } = ""; public string regionName { get; set; } = ""; public string city { get; set; } = ""; public double lat { get; set; } public double lon { get; set; } }
