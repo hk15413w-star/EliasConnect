@@ -30,15 +30,14 @@ app.MapGet("/api/visitors", (VisitorTracker t) => t.GetAll());
 var tracker = app.Services.GetRequiredService<VisitorTracker>();
 tracker.LoadFromFile();
 
-// Tự động save mỗi 5 phút + xóa tin nhắn cũ hơn 2 ngày
+// Tự động save mỗi 5 phút + xóa tin nhắn cũ
 _ = Task.Run(async () =>
 {
     while (true)
     {
         await Task.Delay(TimeSpan.FromMinutes(5));
-        tracker.CleanOldMessages(2); // Xóa tin nhắn > 2 ngày
+        tracker.CleanOldMessages(2);
         tracker.SaveToFile();
-        Console.WriteLine("[SAVE] Messages saved + cleaned");
     }
 });
 
@@ -212,6 +211,7 @@ public class VisitorTracker
     private readonly IHttpClientFactory _hf;
     private readonly ConcurrentDictionary<string, string> _sessions = new();
     private readonly string _savePath = "messages.json";
+    private bool _loaded = false;
 
     public VisitorTracker(IHttpClientFactory hf) => _hf = hf;
 
@@ -257,12 +257,10 @@ public class VisitorTracker
 
     public void AddMessage(string u, string dn, string m, bool save = true)
     {
-        lock (_l)
-        {
-            var msg = new ChatMsg { User = u, DeviceName = dn, Message = m, Timestamp = DateTime.Now, Save = save };
-            _msg.Add(msg);
-            if (_msg.Count > 1000) _msg.RemoveAt(0);
-        }
+        var msg = new ChatMsg { User = u, DeviceName = dn, Message = m, Timestamp = DateTime.Now, Save = save };
+        lock (_l) { _msg.Add(msg); if (_msg.Count > 1000) _msg.RemoveAt(0); }
+        // Lưu ngay nếu được tick
+        if (save) SaveToFile();
     }
 
     public void AddPrivateMessage(string aDev, string vDev, string sender, string msg)
@@ -297,40 +295,45 @@ public class VisitorTracker
         lock (_l) return _msg.Where(m => m.Save).ToList();
     }
 
-    // Lưu tin nhắn ra file JSON
     public void SaveToFile()
     {
         try
         {
             List<ChatMsg> toSave;
             lock (_l) { toSave = _msg.Where(m => m.Save).ToList(); }
-            var json = JsonSerializer.Serialize(toSave);
-            File.WriteAllText(_savePath, json);
-            Console.WriteLine($"[SAVE] {toSave.Count} messages saved");
+            if (toSave.Count > 0)
+            {
+                var json = JsonSerializer.Serialize(toSave);
+                File.WriteAllText(_savePath, json);
+                Console.WriteLine($"[SAVE] {toSave.Count} messages saved to file");
+            }
         }
         catch (Exception ex) { Console.WriteLine($"[SAVE] Error: {ex.Message}"); }
     }
 
-    // Tải tin nhắn từ file JSON
     public void LoadFromFile()
     {
+        if (_loaded) return;
+        _loaded = true;
         try
         {
             if (File.Exists(_savePath))
             {
                 var json = File.ReadAllText(_savePath);
-                var loaded = JsonSerializer.Deserialize<List<ChatMsg>>(json);
-                if (loaded != null)
+                if (!string.IsNullOrWhiteSpace(json))
                 {
-                    lock (_l) { _msg.Clear(); _msg.AddRange(loaded); }
-                    Console.WriteLine($"[LOAD] {loaded.Count} messages loaded");
+                    var loaded = JsonSerializer.Deserialize<List<ChatMsg>>(json);
+                    if (loaded != null && loaded.Count > 0)
+                    {
+                        lock (_l) { _msg.Clear(); _msg.AddRange(loaded); }
+                        Console.WriteLine($"[LOAD] {loaded.Count} messages loaded from file");
+                    }
                 }
             }
         }
         catch (Exception ex) { Console.WriteLine($"[LOAD] Error: {ex.Message}"); }
     }
 
-    // Xóa tin nhắn cũ hơn số ngày chỉ định
     public void CleanOldMessages(int days)
     {
         var cutoff = DateTime.Now.AddDays(-days);
