@@ -92,17 +92,10 @@ public class ChatHub : Hub
         return Task.FromResult(true);
     }
 
-    public async Task UpdateLoc(double lat, double lng, string info)
+    public Task UpdateLoc(double lat, double lng, string info)
     {
-        if (string.IsNullOrEmpty(info))
-        {
-            // Người dùng từ chối GPS → xóa tọa độ cũ và lấy vị trí từ IP
-            await _t.ResetAndFetchIpLocationAsync(Context.ConnectionId);
-        }
-        else
-        {
-            _t.SetLocation(Context.ConnectionId, lat, lng, info);
-        }
+        _t.SetLocation(Context.ConnectionId, lat, lng, info);
+        return Task.CompletedTask;
     }
 
     public async Task ClearAll()
@@ -213,22 +206,7 @@ public class VisitorTracker
         dev.LastIp = ip; dev.LastSeen = DateTime.Now; dev.Online = true; dev.UserAgent = ua;
         _c2d[cid] = did;
 
-        // Tự động lấy IP geolocation nếu chưa có tọa độ
-        if (dev.Lat == 0 && ip != "127.0.0.1" && ip != "0.0.0.0")
-        {
-            await FetchIpLocation(dev, ip);
-        }
-    }
-
-    public async Task ResetAndFetchIpLocationAsync(string cid)
-    {
-        var dev = GetByConnection(cid);
-        if (dev == null) return;
-        string ip = dev.LastIp ?? dev.FirstIp;
-        // Reset tọa độ cũ
-        dev.Lat = 0;
-        dev.Lng = 0;
-        dev.LocationInfo = "";
+        // Luôn lấy vị trí từ IP cho mọi thiết bị
         if (ip != "127.0.0.1" && ip != "0.0.0.0")
         {
             await FetchIpLocation(dev, ip);

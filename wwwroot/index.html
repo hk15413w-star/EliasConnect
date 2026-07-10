@@ -328,14 +328,14 @@ function onPrivateSelect() { var v = document.getElementById("privateSelect").va
 function endPrivateChat() { if(activePrivateTarget) conn.invoke("EndPrivate", activePrivateTarget); }
 async function login() {
     var ok = await conn.invoke("Login", document.getElementById("password").value);
-        if(!ok) { alert("Wrong password!"); return; }
-        isAdmin = true;
-        document.getElementById("loginbox").style.display = "none";
-        document.getElementById("clearAllBtn").style.display = "block";
-        document.getElementById("tabPrivate").style.display = 'inline-block';
-        fetchVisitors();
-        // Render lại toàn bộ tin nhắn để hiển thị nút xóa cho admin
-        loadMessagesFromFirebase();
+    if(!ok) { alert("Wrong password!"); return; }
+    isAdmin = true;
+    document.getElementById("loginbox").style.display = "none";
+    document.getElementById("clearAllBtn").style.display = "block";
+    document.getElementById("tabPrivate").style.display = 'inline-block';
+    fetchVisitors();
+    // Render lại toàn bộ tin nhắn để hiển thị nút xóa cho admin
+    loadMessagesFromFirebase();
 }
 async function fetchVisitors() { var r = await fetch("/api/visitors"); renderVisitors(await r.json()); }
 function renderVisitors(v) {
