@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Elias Connect</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.0/signalr.min.js"></script>
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
     <style>
         *{margin:0;padding:0;box-sizing:border-box}
         body{background:#0a0a0f;color:#e0e0e0;font-family:'Segoe UI',sans-serif;height:100vh;display:flex}
@@ -102,50 +105,46 @@
 </div>
 
 <script>
+// ========== FIREBASE CONFIG ==========
+const firebaseConfig = {
+    databaseURL: "https://elias-chat-f5434-default-rtdb.asia-southeast1.firebasedatabase.app/"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+const messagesRef = db.ref("messages");
+
+// ========== SIGNALR ==========
 var conn = new signalR.HubConnectionBuilder().withUrl("/chat").build();
 var isAdmin = false, myDeviceId = "", currentTab = 'public', activePrivateTarget = null;
 var privateCache = {};
 var allVisitors = [];
-var STORAGE_KEY = 'elias_chat_messages';
 
-// ========== LOCAL STORAGE ==========
-function getStoredMessages() {
-    try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; } catch(e) { return []; }
-}
-function saveMessagesToStorage() {
-    var messages = [];
-    var panels = document.querySelectorAll('#publicMessages .msg');
-    panels.forEach(function(el) {
-        var userEl = el.querySelector('.uname');
-        var timeEl = el.querySelector('.time');
-        var textEl = el.querySelector('.text');
-        if (userEl && textEl) {
-            messages.push({
-                User: userEl.textContent,
-                Message: textEl.textContent,
-                Timestamp: new Date().toISOString()
-            });
+// ========== FIREBASE: Load lịch sử ==========
+function loadMessagesFromFirebase() {
+    var cutoff = Date.now() - (2 * 24 * 60 * 60 * 1000);
+    messagesRef.limitToLast(200).on("child_added", function(snapshot) {
+        var msg = snapshot.val();
+        if (msg.Timestamp && new Date(msg.Timestamp).getTime() > cutoff) {
+            addMsgToPanel('public', msg.User, msg.Message, new Date(msg.Timestamp).toLocaleTimeString());
+        } else {
+            snapshot.ref.remove();
         }
     });
-    if (messages.length > 500) messages = messages.slice(-500);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
-}
-function loadStoredMessages() {
-    var stored = getStoredMessages();
-    // Xóa tin nhắn quá 2 ngày
-    var cutoff = Date.now() - (2 * 24 * 60 * 60 * 1000);
-    stored = stored.filter(function(m) { return new Date(m.Timestamp).getTime() > cutoff; });
-    stored.forEach(function(m) {
-        addMsgToPanel('public', m.User, m.Message, new Date(m.Timestamp).toLocaleTimeString());
-    });
-    // Cập nhật lại storage sau khi xóa
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
 }
 
-// ========== SIGNALR ==========
+function saveMessageToFirebase(user, message) {
+    if (!document.getElementById("saveMsg").checked) return;
+    messagesRef.push({
+        User: user,
+        Message: message,
+        Timestamp: new Date().toISOString()
+    });
+}
+
+// ========== SIGNALR EVENTS ==========
 conn.start().then(function() {
     console.log("SignalR connected");
-    loadStoredMessages();
+    loadMessagesFromFirebase();
     if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(async function(p) {
             var info = "";
@@ -167,7 +166,7 @@ conn.on("Init", function(ip, did) {
 
 conn.on("Msg", function(u, dn, m, t) {
     addMsgToPanel('public', u, m, t);
-    if (document.getElementById("saveMsg").checked) saveMessagesToStorage();
+    saveMessageToFirebase(u, m);
 });
 conn.on("History", function(h) { if(h) h.forEach(function(m) { addMsgToPanel('public', m.User, m.Message, new Date(m.Timestamp).toLocaleTimeString()); }); });
 conn.on("AdminData", function(v) { allVisitors = v; renderVisitors(v); });
@@ -208,13 +207,12 @@ function addMsgToPanel(panelType, user, msg, time) {
 function sendMsg() {
     var m = document.getElementById("msgInput").value.trim();
     if(!m) return;
-    var save = document.getElementById("saveMsg").checked;
     if(currentTab === 'private' && activePrivateTarget) {
         if(isAdmin) conn.invoke("AdminSendPrivate", activePrivateTarget, m);
         else conn.invoke("VisitorSendPrivate", m);
     } else {
         var n = document.getElementById("nameInput").value || "Guest";
-        conn.invoke("SendMsg", n, m, save);
+        conn.invoke("SendMsg", n, m, true);
     }
     document.getElementById("msgInput").value = '';
 }
