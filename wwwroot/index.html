@@ -40,8 +40,7 @@
         .chat-panel{position:absolute;top:0;left:0;width:100%;height:100%;overflow-y:auto;padding:16px;display:none}
         .chat-panel.active{display:block}
         .msg{margin-bottom:10px;animation:fadeIn .3s;position:relative; display:flex; align-items: flex-start; gap: 8px;}
-        .msg .delete-btn{opacity:0; background:none; border:none; color:#ff4444; cursor:pointer; font-size:1.2rem; padding:0 4px; transition:0.2s; line-height:1; }
-        .msg:hover .delete-btn{opacity:1}
+        .msg .delete-btn{ background:none; border:none; color:#ff4444; cursor:pointer; font-size:1.2rem; padding:0 4px; transition:0.2s; line-height:1; }
         @keyframes fadeIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
         .msg .uname{font-weight:bold;font-size:.8rem}
         .msg .uname.admin{color:#ffaa00}.msg .uname.normal{color:#50cd32}
@@ -61,7 +60,6 @@
         .overlay.show{display:block}
         .sidebar.mobile{display:flex!important;position:fixed;top:0;left:0;height:100%;z-index:100;width:300px}
 
-        /* Popup yêu cầu vị trí */
         .location-popup-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);z-index:200;display:flex;justify-content:center;align-items:center;}
         .location-popup{background:#1a1a28;border:1px solid #50cd32;border-radius:16px;padding:30px;text-align:center;max-width:350px;animation:popIn 0.3s ease}
         @keyframes popIn{from{transform:scale(0.8);opacity:0}to{transform:scale(1);opacity:1}}
@@ -69,12 +67,16 @@
         .location-popup p{color:#ccc;font-size:0.9rem;margin-bottom:20px}
         .location-popup button{background:#50cd32;color:#000;border:none;padding:10px 24px;border-radius:8px;font-weight:bold;cursor:pointer;margin:0 5px}
         .location-popup .skip-btn{background:transparent;color:#666;border:1px solid #333}
+
+        .info-popup{position:fixed;top:20px;right:20px;background:#1a1a28;border:1px solid #50cd32;border-radius:8px;padding:16px 20px;z-index:200;max-width:300px;box-shadow:0 4px 15px rgba(0,0,0,0.5);animation:slideIn 0.3s ease}
+        @keyframes slideIn{from{transform:translateX(100%)}to{transform:translateX(0)}}
+        .info-popup p{color:#ddd;font-size:.8rem;margin-bottom:8px}
+        .info-popup button{background:#50cd32;color:#000;border:none;padding:6px 12px;border-radius:4px;cursor:pointer;font-size:.8rem}
         @media(max-width:768px){.sidebar{display:none}.toggle-btn{display:block}}
     </style>
 </head>
 <body>
 
-<!-- Popup yêu cầu vị trí -->
 <div class="location-popup-overlay" id="locationPopup">
     <div class="location-popup">
         <h3>📍 Cho phép vị trí</h3>
@@ -82,6 +84,11 @@
         <button onclick="requestLocationPermission()">Cho phép</button>
         <button class="skip-btn" onclick="closeLocationPopup()">Để sau</button>
     </div>
+</div>
+
+<div id="saveInfoPopup" class="info-popup" style="display:none">
+    <p>💡 <b>Lưu ý:</b> Bạn có thể lưu tin nhắn trong 2 ngày bằng cách tick vào ô "Lưu 2 ngày". Hãy chỉ dùng khi cần thiết để tránh đầy bộ nhớ.</p>
+    <button onclick="closeInfoPopup()">Đã hiểu</button>
 </div>
 
 <div class="overlay" id="overlay" onclick="closeSidebar()"></div>
@@ -125,7 +132,6 @@
 </div>
 
 <script>
-// ========== FIREBASE CONFIG ==========
 const firebaseConfig = {
     databaseURL: "https://elias-chat-f5434-default-rtdb.asia-southeast1.firebasedatabase.app/"
 };
@@ -133,15 +139,15 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 const messagesRef = db.ref("messages");
 
-// ========== SIGNALR ==========
 var conn = new signalR.HubConnectionBuilder().withUrl("/chat").build();
 var isAdmin = false, myDeviceId = "", currentTab = 'public', activePrivateTarget = null;
 var privateCache = {};
 var allVisitors = [];
 
-// ========== POPUP VỊ TRÍ ==========
+// === POPUP VỊ TRÍ ===
 function requestLocationPermission() {
-    closeLocationPopup();
+    document.getElementById('locationPopup').style.display = 'none';
+    showSaveInfoPopup();
     if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(async function(p) {
             var info = "";
@@ -156,9 +162,22 @@ function requestLocationPermission() {
 }
 function closeLocationPopup() {
     document.getElementById('locationPopup').style.display = 'none';
+    showSaveInfoPopup();
 }
 
-// ========== FIREBASE ==========
+// === POPUP LƯU TIN NHẮN ===
+function showSaveInfoPopup() {
+    var popup = document.getElementById('saveInfoPopup');
+    if (popup) {
+        popup.style.display = 'block';
+        setTimeout(function(){ popup.style.display = 'none'; }, 10000);
+    }
+}
+function closeInfoPopup() {
+    document.getElementById('saveInfoPopup').style.display = 'none';
+}
+
+// === FIREBASE ===
 function loadMessagesFromFirebase() {
     var cutoff = Date.now() - (2 * 24 * 60 * 60 * 1000);
     messagesRef.limitToLast(200).once("value", function(snapshot) {
@@ -173,7 +192,6 @@ function loadMessagesFromFirebase() {
         });
     });
 }
-
 function saveMessageToFirebase(user, message) {
     if (!document.getElementById("saveMsg").checked) return;
     var newRef = messagesRef.push();
@@ -184,12 +202,11 @@ function saveMessageToFirebase(user, message) {
         SenderDeviceId: myDeviceId
     });
 }
-
 function deleteMessageFromFirebase(firebaseKey) {
     messagesRef.child(firebaseKey).remove();
 }
 
-// ========== SIGNALR EVENTS ==========
+// === SIGNALR ===
 conn.start().then(function() {
     console.log("SignalR connected");
     loadMessagesFromFirebase();
@@ -200,12 +217,11 @@ conn.on("Init", function(ip, did) {
     document.getElementById("mydevice").textContent = did || "Unknown";
     myDeviceId = did;
 });
-
 conn.on("Msg", function(u, dn, m, t, deviceId) {
     addMsgToPanel('public', u, m, t, deviceId);
     saveMessageToFirebase(u, m);
 });
-conn.on("History", function(h) { /* Không dùng */ });
+conn.on("History", function(h) {});
 conn.on("MessageDeleted", function(firebaseKey) {
     var el = document.querySelector(`[data-firebase-key="${firebaseKey}"]`);
     if (el) el.remove();
@@ -238,7 +254,6 @@ conn.on("PrivateEnded", function() {
 function addMsgToPanel(panelType, user, msg, time, deviceId) {
     addMsgToPanelWithKey(panelType, null, user, msg, time, deviceId);
 }
-
 function addMsgToPanelWithKey(panelType, firebaseKey, user, msg, time, senderDeviceId) {
     var panel = document.getElementById(panelType === 'public' ? 'publicMessages' : 'privateMessages');
     var div = document.createElement("div");
@@ -264,7 +279,6 @@ function addMsgToPanelWithKey(panelType, firebaseKey, user, msg, time, senderDev
     panel.appendChild(div);
     panel.scrollTop = panel.scrollHeight;
 }
-
 function deleteMessage(firebaseKey) {
     if (!firebaseKey) return;
     var el = document.querySelector(`[data-firebase-key="${firebaseKey}"]`);
@@ -292,7 +306,6 @@ function sendMsg() {
     }
     document.getElementById("msgInput").value = '';
 }
-
 function switchTab(tab) {
     currentTab = tab;
     document.getElementById("tabPublic").classList.toggle("active", tab === 'public');
@@ -306,7 +319,6 @@ function switchTab(tab) {
         document.getElementById("privateMessages").scrollTop = document.getElementById("privateMessages").scrollHeight;
     }
 }
-
 function openPrivateTab(targetId) {
     activePrivateTarget = targetId;
     document.getElementById("tabPrivate").style.display = 'inline-block';
@@ -316,10 +328,8 @@ function openPrivateTab(targetId) {
     }
     switchTab('private');
 }
-
 function onPrivateSelect() { var v = document.getElementById("privateSelect").value; if(v) conn.invoke("AdminStartPrivate", v); }
 function endPrivateChat() { if(activePrivateTarget) conn.invoke("EndPrivate", activePrivateTarget); }
-
 async function login() {
     var ok = await conn.invoke("Login", document.getElementById("password").value);
     if(!ok) { alert("Wrong password!"); return; }
@@ -329,9 +339,7 @@ async function login() {
     document.getElementById("tabPrivate").style.display = 'inline-block';
     fetchVisitors();
 }
-
 async function fetchVisitors() { var r = await fetch("/api/visitors"); renderVisitors(await r.json()); }
-
 function renderVisitors(v) {
     allVisitors = v || [];
     var l = document.getElementById("visitorList");
@@ -350,7 +358,6 @@ function renderVisitors(v) {
     });
     l.innerHTML = h;
 }
-
 setInterval(function() { if(isAdmin) fetchVisitors(); }, 10000);
 function openSidebar() { document.getElementById("sidebar").classList.add("mobile"); document.getElementById("overlay").classList.add("show"); }
 function closeSidebar() { document.getElementById("sidebar").classList.remove("mobile"); document.getElementById("overlay").classList.remove("show"); }
