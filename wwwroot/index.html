@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Elias Connect</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.0/signalr.min.js"></script>
-    <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
     <style>
@@ -40,12 +39,15 @@
         .chat-container{flex:1;position:relative}
         .chat-panel{position:absolute;top:0;left:0;width:100%;height:100%;overflow-y:auto;padding:16px;display:none}
         .chat-panel.active{display:block}
-        .msg{margin-bottom:10px;animation:fadeIn .3s}
+        .msg{margin-bottom:10px;animation:fadeIn .3s;position:relative; display:flex; align-items: flex-start; gap: 8px;}
+        .msg:hover .delete-btn{opacity:1}
         @keyframes fadeIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
         .msg .uname{font-weight:bold;font-size:.8rem}
         .msg .uname.admin{color:#ffaa00}.msg .uname.normal{color:#50cd32}
         .msg .time{color:#555;font-size:.65rem;margin-left:8px}
-        .msg .text{color:#ddd;margin-top:3px;word-wrap:break-word;font-size:.9rem}
+        .msg .text{color:#ddd;margin-top:3px;word-wrap:break-word;font-size:.9rem; flex: 1;}
+        .delete-btn{opacity:0; background:none; border:none; color:#ff4444; cursor:pointer; font-size:1rem; padding:0 4px; transition:0.2s;}
+        .delete-btn:hover{color:#ff8888}
         .private-bar{display:flex;align-items:center;gap:8px;padding:8px 16px;background:#12121a;border-bottom:1px solid #252535}
         .private-bar select{flex:1;background:#1a1a28;color:#fff;border:1px solid #333;padding:8px;border-radius:6px}
         .private-bar button{background:#ff4444;color:#fff;border:none;padding:6px 12px;border-radius:4px;cursor:pointer;font-size:.75rem}
@@ -59,10 +61,22 @@
         .overlay{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.7);z-index:99}
         .overlay.show{display:block}
         .sidebar.mobile{display:flex!important;position:fixed;top:0;left:0;height:100%;z-index:100;width:300px}
+
+        /* Popup thông báo lưu */
+        .info-popup{position:fixed;top:20px;right:20px;background:#1a1a28;border:1px solid #50cd32;border-radius:8px;padding:16px 20px;z-index:200;max-width:300px;box-shadow:0 4px 15px rgba(0,0,0,0.5);animation:slideIn 0.3s ease}
+        @keyframes slideIn{from{transform:translateX(100%)}to{transform:translateX(0)}}
+        .info-popup p{color:#ddd;font-size:.8rem;margin-bottom:8px}
+        .info-popup button{background:#50cd32;color:#000;border:none;padding:6px 12px;border-radius:4px;cursor:pointer;font-size:.8rem}
         @media(max-width:768px){.sidebar{display:none}.toggle-btn{display:block}}
     </style>
 </head>
 <body>
+
+<!-- Popup thông báo lưu -->
+<div id="saveInfoPopup" class="info-popup" style="display:none">
+    <p>💡 <b>Lưu ý:</b> Bạn có thể lưu tin nhắn trong 2 ngày bằng cách tick vào ô "Lưu 2 ngày". Hãy chỉ dùng khi cần thiết để tránh đầy bộ nhớ.</p>
+    <button onclick="closeInfoPopup()">Đã hiểu</button>
+</div>
 
 <div class="overlay" id="overlay" onclick="closeSidebar()"></div>
 
@@ -99,7 +113,7 @@
     <div class="input-area">
         <input type="text" id="nameInput" placeholder="Name..." value="Guest" style="max-width:100px">
         <input type="text" id="msgInput" placeholder="Message..." onkeypress="if(event.key==='Enter')sendMsg()">
-        <label class="save-check"><input type="checkbox" id="saveMsg" checked> Lưu 2 ngày</label>
+        <label class="save-check"><input type="checkbox" id="saveMsg"> Lưu 2 ngày</label>
         <button onclick="sendMsg()">Send</button>
     </div>
 </div>
@@ -119,17 +133,27 @@ var isAdmin = false, myDeviceId = "", currentTab = 'public', activePrivateTarget
 var privateCache = {};
 var allVisitors = [];
 
-// ========== FIREBASE: Load lịch sử một lần duy nhất ==========
+// ========== POPUP THÔNG BÁO ==========
+function showSaveInfoPopup() {
+    document.getElementById('saveInfoPopup').style.display = 'block';
+    // Tự động ẩn sau 10 giây
+    setTimeout(function(){ document.getElementById('saveInfoPopup').style.display = 'none'; }, 10000);
+}
+function closeInfoPopup() {
+    document.getElementById('saveInfoPopup').style.display = 'none';
+}
+
+// ========== FIREBASE: Load lịch sử một lần ==========
 function loadMessagesFromFirebase() {
     var cutoff = Date.now() - (2 * 24 * 60 * 60 * 1000);
     messagesRef.limitToLast(200).once("value", function(snapshot) {
-        document.getElementById("publicMessages").innerHTML = ''; // Xóa panel hiện tại để tránh trùng với History
+        document.getElementById("publicMessages").innerHTML = '';
         snapshot.forEach(function(child) {
             var msg = child.val();
             if (msg.Timestamp && new Date(msg.Timestamp).getTime() > cutoff) {
-                addMsgToPanel('public', msg.User, msg.Message, new Date(msg.Timestamp).toLocaleTimeString());
+                addMsgToPanelWithKey('public', child.key, msg.User, msg.Message, new Date(msg.Timestamp).toLocaleTimeString());
             } else {
-                child.ref.remove(); // Xóa tin nhắn quá hạn khỏi Firebase
+                child.ref.remove();
             }
         });
     });
@@ -137,17 +161,24 @@ function loadMessagesFromFirebase() {
 
 function saveMessageToFirebase(user, message) {
     if (!document.getElementById("saveMsg").checked) return;
-    messagesRef.push({
+    var newRef = messagesRef.push();
+    newRef.set({
         User: user,
         Message: message,
         Timestamp: new Date().toISOString()
     });
+    // Không cần làm gì thêm vì tin nhắn đã hiển thị qua SignalR
+}
+
+function deleteMessageFromFirebase(firebaseKey) {
+    messagesRef.child(firebaseKey).remove();
 }
 
 // ========== SIGNALR EVENTS ==========
 conn.start().then(function() {
     console.log("SignalR connected");
-    loadMessagesFromFirebase(); // Load lịch sử sau khi kết nối SignalR
+    showSaveInfoPopup(); // Hiển thị popup thông báo
+    loadMessagesFromFirebase();
     if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(async function(p) {
             var info = "";
@@ -169,10 +200,14 @@ conn.on("Init", function(ip, did) {
 
 conn.on("Msg", function(u, dn, m, t) {
     addMsgToPanel('public', u, m, t);
-    saveMessageToFirebase(u, m); // Chỉ lưu, không cần load lại vì đã hiển thị rồi
+    saveMessageToFirebase(u, m);
 });
 conn.on("History", function(h) {
-    // Không làm gì vì chúng ta dùng Firebase để load lịch sử
+    // Không dùng History vì đã load từ Firebase
+});
+conn.on("MessageDeleted", function(firebaseKey) {
+    var el = document.querySelector(`[data-firebase-key="${firebaseKey}"]`);
+    if (el) el.remove();
 });
 conn.on("AdminData", function(v) { allVisitors = v; renderVisitors(v); });
 conn.on("PrivateOpened", function(targetId, history) {
@@ -200,13 +235,38 @@ conn.on("PrivateEnded", function() {
 });
 
 function addMsgToPanel(panelType, user, msg, time) {
+    addMsgToPanelWithKey(panelType, null, user, msg, time);
+}
+
+function addMsgToPanelWithKey(panelType, firebaseKey, user, msg, time) {
     var panel = document.getElementById(panelType === 'public' ? 'publicMessages' : 'privateMessages');
     var div = document.createElement("div");
     div.className = "msg";
+    if (firebaseKey) div.setAttribute("data-firebase-key", firebaseKey);
+    
     var isAdminMsg = user.indexOf('[ADMIN]') === 0;
-    div.innerHTML = '<span class="uname ' + (isAdminMsg ? 'admin' : 'normal') + '">' + user + '</span><span class="time">' + time + '</span><div class="text">' + msg + '</div>';
+    div.innerHTML = `
+        <button class="delete-btn" title="Xóa tin nhắn" onclick="deleteMessage('${firebaseKey || ''}')">✕</button>
+        <div style="flex:1">
+            <span class="uname ${isAdminMsg ? 'admin' : 'normal'}">${user}</span>
+            <span class="time">${time}</span>
+            <div class="text">${msg}</div>
+        </div>
+    `;
     panel.appendChild(div);
     panel.scrollTop = panel.scrollHeight;
+}
+
+function deleteMessage(firebaseKey) {
+    if (!firebaseKey) return;
+    if (!confirm("Bạn có chắc muốn xóa tin nhắn này?")) return;
+    // Xóa trên Firebase
+    deleteMessageFromFirebase(firebaseKey);
+    // Xóa khỏi giao diện local
+    var el = document.querySelector(`[data-firebase-key="${firebaseKey}"]`);
+    if (el) el.remove();
+    // Gửi SignalR để xóa trên các client khác
+    conn.invoke("DeleteMessage", firebaseKey);
 }
 
 function sendMsg() {
