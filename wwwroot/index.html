@@ -40,7 +40,7 @@
         .chat-panel{position:absolute;top:0;left:0;width:100%;height:100%;overflow-y:auto;padding:16px;display:none}
         .chat-panel.active{display:block}
         .msg{margin-bottom:10px;animation:fadeIn .3s;position:relative; display:flex; align-items: flex-start; gap: 8px;}
-        .msg .delete-btn{ background:none; border:none; color:#ff4444; cursor:pointer; font-size:1.2rem; padding:0 4px; transition:0.2s; line-height:1; }
+        .msg .delete-btn{background:none; border:none; color:#ff4444; cursor:pointer; font-size:1.2rem; padding:0 4px; line-height:1; -webkit-tap-highlight-color: transparent; }
         @keyframes fadeIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
         .msg .uname{font-weight:bold;font-size:.8rem}
         .msg .uname.admin{color:#ffaa00}.msg .uname.normal{color:#50cd32}
@@ -132,7 +132,6 @@
 </div>
 
 <script>
-// Firebase
 const firebaseConfig = {
     databaseURL: "https://elias-chat-f5434-default-rtdb.asia-southeast1.firebasedatabase.app/"
 };
@@ -140,7 +139,6 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 const messagesRef = db.ref("messages");
 
-// SignalR
 var conn = new signalR.HubConnectionBuilder().withUrl("/chat").build();
 var isAdmin = false, myDeviceId = "", currentTab = 'public', activePrivateTarget = null;
 var privateCache = {};
@@ -264,6 +262,7 @@ function addMsgToPanelWithKey(panelType, firebaseKey, user, msg, time, senderDev
     if (senderDeviceId) div.setAttribute("data-sender-deviceid", senderDeviceId);
     
     var isAdminMsg = user.indexOf('[ADMIN]') === 0;
+    // Admin có thể xóa bất kỳ tin nhắn nào, visitor chỉ xóa được tin của chính mình
     var canDelete = isAdmin || (myDeviceId && senderDeviceId && myDeviceId === senderDeviceId);
     var deleteBtnHTML = '';
     if (canDelete && firebaseKey) {

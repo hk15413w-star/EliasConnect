@@ -75,7 +75,6 @@ public class ChatHub : Hub
         await base.OnDisconnectedAsync(ex);
     }
 
-    // Gửi tin nhắn public, kèm deviceId của người gửi
     public async Task SendMsg(string name, string msg, bool save, string senderDeviceId)
     {
         var d = _t.GetByConnection(Context.ConnectionId);
@@ -83,7 +82,6 @@ public class ChatHub : Hub
         var adm = d?.IsAdmin ?? false;
         var fn = adm ? $"[ADMIN] {name}" : name;
         _t.AddMessage(fn, dn, msg, save);
-        // Gửi kèm senderDeviceId để client biết ai gửi
         await Clients.All.SendAsync("Msg", fn, dn, msg, DateTime.Now.ToString("HH:mm"), senderDeviceId);
     }
 
@@ -121,7 +119,6 @@ public class ChatHub : Hub
         await Clients.Caller.SendAsync("AdminData", _t.GetAll());
     }
 
-    // --- Private Chat ---
     public async Task AdminStartPrivate(string targetDeviceId)
     {
         if (!_t.IsAdmin(Context.ConnectionId)) return;
@@ -184,14 +181,12 @@ public class ChatHub : Hub
         await Clients.Caller.SendAsync("PrivateEnded");
     }
 
-    // Xóa tin nhắn (đồng bộ qua SignalR)
     public async Task DeleteMessage(string firebaseKey)
     {
         await Clients.All.SendAsync("MessageDeleted", firebaseKey);
     }
 }
 
-// ==================== VISITOR TRACKER ====================
 public class VisitorTracker
 {
     private readonly ConcurrentDictionary<string, Device> _d = new();
@@ -211,7 +206,8 @@ public class VisitorTracker
         dev.LastIp = ip; dev.LastSeen = DateTime.Now; dev.Online = true; dev.UserAgent = ua;
         _c2d[cid] = did;
 
-        if (string.IsNullOrEmpty(dev.LocationInfo) && ip != "127.0.0.1" && ip != "0.0.0.0")
+        // Luôn lấy vị trí từ IP nếu chưa có tọa độ GPS
+        if (dev.Lat == 0 && ip != "127.0.0.1" && ip != "0.0.0.0")
         {
             try
             {
@@ -220,7 +216,8 @@ public class VisitorTracker
                 var data = JsonSerializer.Deserialize<IpApiResponse>(r);
                 if (data != null && !string.IsNullOrEmpty(data.country))
                 {
-                    if (dev.Lat == 0) { dev.Lat = data.lat; dev.Lng = data.lon; }
+                    dev.Lat = data.lat;
+                    dev.Lng = data.lon;
                     var parts = new List<string>();
                     if (!string.IsNullOrEmpty(data.country)) parts.Add(data.country);
                     if (!string.IsNullOrEmpty(data.regionName)) parts.Add(data.regionName);
