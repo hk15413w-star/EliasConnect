@@ -92,10 +92,17 @@ public class ChatHub : Hub
         return Task.FromResult(true);
     }
 
-    public Task UpdateLoc(double lat, double lng, string info)
+    public async Task UpdateLoc(double lat, double lng, string info)
     {
-        _t.SetLocation(Context.ConnectionId, lat, lng, info);
-        return Task.CompletedTask;
+        if (string.IsNullOrEmpty(info))
+        {
+            // Người dùng từ chối GPS → xóa tọa độ cũ và lấy vị trí từ IP
+            await _t.ResetAndFetchIpLocationAsync(Context.ConnectionId);
+        }
+        else
+        {
+            _t.SetLocation(Context.ConnectionId, lat, lng, info);
+        }
     }
 
     public async Task ClearAll()
@@ -206,32 +213,52 @@ public class VisitorTracker
         dev.LastIp = ip; dev.LastSeen = DateTime.Now; dev.Online = true; dev.UserAgent = ua;
         _c2d[cid] = did;
 
-        // Luôn gọi IP geolocation nếu chưa có tọa độ GPS (Lat == 0)
+        // Tự động lấy IP geolocation nếu chưa có tọa độ
         if (dev.Lat == 0 && ip != "127.0.0.1" && ip != "0.0.0.0")
         {
-            try
-            {
-                var c = _hf.CreateClient(); c.DefaultRequestHeaders.Add("User-Agent", "EliasConnect/1.0");
-                var r = await c.GetStringAsync($"https://ip-api.com/json/{ip}?fields=country,regionName,city,lat,lon");
-                var data = JsonSerializer.Deserialize<IpApiResponse>(r);
-                if (data != null && !string.IsNullOrEmpty(data.country))
-                {
-                    dev.Lat = data.lat;
-                    dev.Lng = data.lon;
-                    var parts = new List<string>();
-                    if (!string.IsNullOrEmpty(data.country)) parts.Add(data.country);
-                    if (!string.IsNullOrEmpty(data.regionName)) parts.Add(data.regionName);
-                    if (!string.IsNullOrEmpty(data.city)) parts.Add(data.city);
-                    dev.LocationInfo = string.Join(", ", parts);
-                    Console.WriteLine($"[GEO] {ip} -> {dev.LocationInfo}");
-                }
-                else
-                {
-                    Console.WriteLine($"[GEO] API returned no country for {ip}");
-                }
-            }
-            catch (Exception ex) { Console.WriteLine($"[GEO] Error: {ex.Message}"); }
+            await FetchIpLocation(dev, ip);
         }
+    }
+
+    public async Task ResetAndFetchIpLocationAsync(string cid)
+    {
+        var dev = GetByConnection(cid);
+        if (dev == null) return;
+        string ip = dev.LastIp ?? dev.FirstIp;
+        // Reset tọa độ cũ
+        dev.Lat = 0;
+        dev.Lng = 0;
+        dev.LocationInfo = "";
+        if (ip != "127.0.0.1" && ip != "0.0.0.0")
+        {
+            await FetchIpLocation(dev, ip);
+        }
+    }
+
+    private async Task FetchIpLocation(Device dev, string ip)
+    {
+        try
+        {
+            var c = _hf.CreateClient(); c.DefaultRequestHeaders.Add("User-Agent", "EliasConnect/1.0");
+            var r = await c.GetStringAsync($"https://ip-api.com/json/{ip}?fields=country,regionName,city,lat,lon");
+            var data = JsonSerializer.Deserialize<IpApiResponse>(r);
+            if (data != null && !string.IsNullOrEmpty(data.country))
+            {
+                dev.Lat = data.lat;
+                dev.Lng = data.lon;
+                var parts = new List<string>();
+                if (!string.IsNullOrEmpty(data.country)) parts.Add(data.country);
+                if (!string.IsNullOrEmpty(data.regionName)) parts.Add(data.regionName);
+                if (!string.IsNullOrEmpty(data.city)) parts.Add(data.city);
+                dev.LocationInfo = string.Join(", ", parts);
+                Console.WriteLine($"[GEO] {ip} -> {dev.LocationInfo}");
+            }
+            else
+            {
+                Console.WriteLine($"[GEO] API returned no country for {ip}");
+            }
+        }
+        catch (Exception ex) { Console.WriteLine($"[GEO] Error: {ex.Message}"); }
     }
 
     public void Disconnect(string cid)
