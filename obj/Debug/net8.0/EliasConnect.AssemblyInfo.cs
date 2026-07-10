@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("EliasConnect")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+e29af9a81c66f1e949af14cba150fdc485d44d62")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+e5d746c2142bbeee711a353b5844cd3349b47ca7")]
 [assembly: System.Reflection.AssemblyProductAttribute("EliasConnect")]
 [assembly: System.Reflection.AssemblyTitleAttribute("EliasConnect")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

@@ -56,38 +56,10 @@
         .overlay{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.7);z-index:99}
         .overlay.show{display:block}
         .sidebar.mobile{display:flex!important;position:fixed;top:0;left:0;height:100%;z-index:100;width:300px}
-
-        /* Popup chào mừng */
-        .welcome-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);z-index:999;display:flex;justify-content:center;align-items:center}
-        .welcome-popup{background:#12121a;border:1px solid #252535;border-radius:20px;padding:40px 30px;text-align:center;max-width:420px;width:90%;animation:popIn 0.4s ease}
-        @keyframes popIn{from{transform:scale(0.85);opacity:0}to{transform:scale(1);opacity:1}}
-        .welcome-popup .icon{font-size:4rem;margin-bottom:16px;animation:bounce 2s infinite}
-        @keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-15px)}}
-        .welcome-popup h2{color:#50cd32;font-size:1.5rem;margin-bottom:8px}
-        .welcome-popup p{color:#aaa;font-size:0.9rem;margin-bottom:12px;line-height:1.5}
-        .welcome-popup .hint{color:#666;font-size:0.8rem;margin-bottom:20px}
-        .welcome-popup .hint kbd{background:#1a1a28;border:1px solid #333;border-radius:4px;padding:3px 8px;font-size:0.8rem;color:#50cd32;font-family:inherit}
-        .welcome-popup .btn-enter{background:#50cd32;color:#000;border:none;padding:12px 30px;border-radius:8px;font-weight:bold;font-size:1rem;cursor:pointer;transition:0.2s}
-        .welcome-popup .btn-enter:hover{background:#60dd42;transform:scale(1.05)}
-        .welcome-popup .btn-skip{background:transparent;color:#666;border:none;padding:10px 20px;border-radius:8px;font-size:0.8rem;cursor:pointer;margin-top:8px}
-
         @media(max-width:768px){.sidebar{display:none}.toggle-btn{display:block}}
     </style>
 </head>
 <body>
-
-<!-- Popup chào mừng -->
-<div class="welcome-overlay" id="welcomeOverlay">
-    <div class="welcome-popup">
-        <div class="icon">🌍</div>
-        <h2>Welcome to Elias Connect</h2>
-        <p>Để có trải nghiệm tốt nhất, hãy cho phép truy cập vị trí của bạn.</p>
-        <p class="hint">Nhấn <kbd>Enter</kbd> để tiếp tục</p>
-        <button class="btn-enter" id="btnEnter">Bấm Enter để vào</button>
-        <br>
-        <button class="btn-skip" id="btnSkip">Bỏ qua</button>
-    </div>
-</div>
 
 <div class="overlay" id="overlay" onclick="closeSidebar()"></div>
 
@@ -99,7 +71,7 @@
         <input type="password" id="password" placeholder="Admin password..." onkeypress="if(event.key==='Enter')login()">
         <button onclick="login()">Login</button>
     </div>
-    <button class="btn-clear" id="clearAllBtn" style="display:none" onclick="clearAll()">Clear All</button>
+    <button class="btn-clear" id="clearAllBtn" style="display:none" onclick="clearAll()">Clear All Visitors</button>
     <div id="visitorList"><div style="color:#555;font-size:.8rem;padding:20px;text-align:center">Login to see visitors</div></div>
 </div>
 
@@ -135,30 +107,8 @@ var isAdmin = false, myDeviceId = "", currentTab = 'public', activePrivateTarget
 var privateCache = {};
 var allVisitors = [];
 
-// ========== POPUP CHÀO MỪNG ==========
-var welcomeOverlay = document.getElementById('welcomeOverlay');
-var btnEnter = document.getElementById('btnEnter');
-var btnSkip = document.getElementById('btnSkip');
-var popupClosed = false;
-
-function closeWelcomePopup() {
-    if (popupClosed) return;
-    popupClosed = true;
-    welcomeOverlay.style.display = 'none';
-    requestLocation();
-}
-
-btnEnter.addEventListener('click', closeWelcomePopup);
-btnSkip.addEventListener('click', closeWelcomePopup);
-
-document.addEventListener('keydown', function(e) {
-    if (!popupClosed && e.key === 'Enter') {
-        e.preventDefault();
-        closeWelcomePopup();
-    }
-});
-
-function requestLocation() {
+conn.start().then(function() {
+    console.log("SignalR connected");
     if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(async function(p) {
             var info = "";
@@ -170,11 +120,6 @@ function requestLocation() {
             conn.invoke("UpdateLoc", p.coords.latitude, p.coords.longitude, info);
         }, function() {});
     }
-}
-
-// ========== SIGNALR ==========
-conn.start().then(function() {
-    console.log("SignalR connected");
 }).catch(function(err) { console.error(err); });
 
 conn.on("Init", function(ip, did) {
@@ -258,14 +203,8 @@ function openPrivateTab(targetId) {
     switchTab('private');
 }
 
-function onPrivateSelect() {
-    var v = document.getElementById("privateSelect").value;
-    if(v) conn.invoke("AdminStartPrivate", v);
-}
-
-function endPrivateChat() {
-    if(activePrivateTarget) conn.invoke("EndPrivate", activePrivateTarget);
-}
+function onPrivateSelect() { var v = document.getElementById("privateSelect").value; if(v) conn.invoke("AdminStartPrivate", v); }
+function endPrivateChat() { if(activePrivateTarget) conn.invoke("EndPrivate", activePrivateTarget); }
 
 async function login() {
     var ok = await conn.invoke("Login", document.getElementById("password").value);
@@ -277,33 +216,20 @@ async function login() {
     fetchVisitors();
 }
 
-async function fetchVisitors() {
-    var r = await fetch("/api/visitors");
-    renderVisitors(await r.json());
-}
+async function fetchVisitors() { var r = await fetch("/api/visitors"); renderVisitors(await r.json()); }
 
 function renderVisitors(v) {
     allVisitors = v || [];
     var l = document.getElementById("visitorList");
-    if(!allVisitors.length) {
-        l.innerHTML = '<div style="color:#555;font-size:.8rem;padding:20px;text-align:center">No visitors</div>';
-        return;
-    }
+    if(!allVisitors.length) { l.innerHTML = '<div style="color:#555;font-size:.8rem;padding:20px;text-align:center">No visitors</div>'; return; }
     var h = "", sel = document.getElementById("privateSelect");
     sel.innerHTML = '<option value="">-- Select --</option>';
     allVisitors.forEach(function(v) {
-        var ip = v.lastIp || v.firstIp || "Unknown";
-        var name = v.nickname || v.deviceId;
-        var on = v.online;
-        var locationInfo = v.locationInfo || "";
+        var ip = v.lastIp || v.firstIp || "Unknown", name = v.nickname || v.deviceId, on = v.online, loc = v.locationInfo || "";
         h += '<div class="card"><span class="dot ' + (on ? 'on' : 'off') + '"></span><span class="devname">' + name + '</span>';
-        if(isAdmin) {
-            h += '<div class="actions">';
-            if(on && v.deviceId !== myDeviceId) h += '<button onclick="conn.invoke(\'AdminStartPrivate\',\'' + v.deviceId + '\')">Private Chat</button>';
-            h += '<button class="danger" onclick="conn.invoke(\'DeleteVisitor\',\'' + v.deviceId + '\')">Delete</button></div>';
-        }
+        if(isAdmin) { h += '<div class="actions">'; if(on && v.deviceId !== myDeviceId) h += '<button onclick="conn.invoke(\'AdminStartPrivate\',\'' + v.deviceId + '\')">Private Chat</button>'; h += '<button class="danger" onclick="conn.invoke(\'DeleteVisitor\',\'' + v.deviceId + '\')">Delete</button></div>'; }
         h += '<span class="ip">IP: ' + ip + '</span><br>';
-        if(locationInfo) h += '<span class="loc">📍 ' + locationInfo + '</span><br>';
+        if(loc) h += '<span class="loc">📍 ' + loc + '</span><br>';
         if(v.lat && v.lng) h += '<span class="geo">GPS: ' + Number(v.lat).toFixed(4) + ', ' + Number(v.lng).toFixed(4) + '</span><br>';
         h += '<span class="time">' + new Date(v.lastSeen).toLocaleTimeString() + '</span></div>';
         if(isAdmin && on && v.deviceId !== myDeviceId) sel.innerHTML += '<option value="' + v.deviceId + '">' + name + '</option>';
@@ -312,10 +238,9 @@ function renderVisitors(v) {
 }
 
 setInterval(function() { if(isAdmin) fetchVisitors(); }, 10000);
-
 function openSidebar() { document.getElementById("sidebar").classList.add("mobile"); document.getElementById("overlay").classList.add("show"); }
 function closeSidebar() { document.getElementById("sidebar").classList.remove("mobile"); document.getElementById("overlay").classList.remove("show"); }
-async function clearAll() { if(!confirm("Clear all?")) return; await conn.invoke("ClearAll"); }
+async function clearAll() { if(!confirm("Clear all visitors?")) return; await conn.invoke("ClearAll"); }
 </script>
 </body>
 </html>
