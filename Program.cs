@@ -69,7 +69,7 @@ public class ChatHub : Hub
     }
 
     public override async Task OnDisconnectedAsync(Exception? ex) { _t.Disconnect(Context.ConnectionId); await base.OnDisconnectedAsync(ex); }
-    public async Task SendMsg(string name, string msg, bool save) { var d = _t.GetByConnection(Context.ConnectionId); var dn = d?.DisplayName ?? "Unknown"; var adm = d?.IsAdmin ?? false; var fn = adm ? $"[ADMIN] {name}" : name; _t.AddMessage(fn, dn, msg, save); await Clients.All.SendAsync("Msg", fn, dn, msg, DateTime.Now.ToString("HH:mm")); }
+    public async Task SendMsg(string name, string msg, bool save, string deviceId) { var d = _t.GetByConnection(Context.ConnectionId); var dn = d?.DisplayName ?? "Unknown"; var adm = d?.IsAdmin ?? false; var fn = adm ? $"[ADMIN] {name}" : name; _t.AddMessage(fn, dn, msg, save); await Clients.All.SendAsync("Msg", fn, dn, msg, DateTime.Now.ToString("HH:mm"), deviceId); }
     public Task<bool> Login(string pw) { if (pw != "elias2026") return Task.FromResult(false); _t.SetAdmin(Context.ConnectionId, true); return Task.FromResult(true); }
     public Task UpdateLoc(double lat, double lng, string info) { _t.SetLocation(Context.ConnectionId, lat, lng, info); return Task.CompletedTask; }
     public async Task ClearAll() { if (!_t.IsAdmin(Context.ConnectionId)) return; _t.ClearAll(); await Clients.Caller.SendAsync("AdminData", _t.GetAll()); }
@@ -80,10 +80,8 @@ public class ChatHub : Hub
     public async Task VisitorSendPrivate(string msg) { var v = _t.GetByConnection(Context.ConnectionId); if (v == null || v.IsAdmin) return; var aid = _t.GetPrivateAdmin(v.DeviceId); if (aid == null) return; var sn = v.DisplayName; _t.AddPrivateMessage(aid, v.DeviceId, sn, msg); await Clients.Caller.SendAsync("PrivateMsg", aid, sn, msg, DateTime.Now.ToString("HH:mm")); var ac = _t.GetOnlineConnectionId(aid); if (ac != null) await Clients.Client(ac).SendAsync("PrivateMsg", v.DeviceId, sn, msg, DateTime.Now.ToString("HH:mm")); }
     public async Task EndPrivate(string tid) { var d = _t.GetByConnection(Context.ConnectionId); if (d == null) return; if (d.IsAdmin) { _t.EndPrivateSession(d.DeviceId); var tc = _t.GetOnlineConnectionId(tid); if (tc != null) await Clients.Client(tc).SendAsync("PrivateEnded"); } else { var aid = _t.GetPrivateAdmin(d.DeviceId); if (aid != null) { _t.EndPrivateSession(aid); var ac = _t.GetOnlineConnectionId(aid); if (ac != null) await Clients.Client(ac).SendAsync("PrivateEnded", d.DeviceId); } } await Clients.Caller.SendAsync("PrivateEnded"); }
 
-    // New method: Delete a message by Firebase key
     public async Task DeleteMessage(string firebaseKey)
     {
-        // Broadcast to all clients to remove the message with this key
         await Clients.All.SendAsync("MessageDeleted", firebaseKey);
     }
 }
