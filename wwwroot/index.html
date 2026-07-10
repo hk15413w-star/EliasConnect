@@ -281,4 +281,83 @@ function deleteMessage(firebaseKey) {
         return;
     }
     if (!confirm("Xóa tin nhắn này?")) return;
-    deleteMessageFromFirebase(firebaseKey);}
+    deleteMessageFromFirebase(firebaseKey);
+    if (el) el.remove();
+    conn.invoke("DeleteMessage", firebaseKey);
+}
+
+function sendMsg() {
+    var m = document.getElementById("msgInput").value.trim();
+    if(!m) return;
+    var save = document.getElementById("saveMsg").checked;
+    if(currentTab === 'private' && activePrivateTarget) {
+        if(isAdmin) conn.invoke("AdminSendPrivate", activePrivateTarget, m);
+        else conn.invoke("VisitorSendPrivate", m);
+    } else {
+        var n = document.getElementById("nameInput").value || "Guest";
+        // Lưu Firebase trước, rồi gửi kèm firebaseKey qua SignalR
+        saveMessageToFirebase(n, m, function(firebaseKey) {
+            conn.invoke("SendMsg", n, m, save, myDeviceId, firebaseKey || "");
+        });
+    }
+    document.getElementById("msgInput").value = '';
+}
+function switchTab(tab) {
+    currentTab = tab;
+    document.getElementById("tabPublic").classList.toggle("active", tab === 'public');
+    document.getElementById("tabPrivate").classList.toggle("active", tab === 'private');
+    document.getElementById("publicMessages").classList.toggle("active", tab === 'public');
+    document.getElementById("privateMessages").classList.toggle("active", tab === 'private');
+    if(tab === 'public') {
+        document.getElementById("privateBar").style.display = 'none';
+    } else {
+        if(isAdmin) document.getElementById("privateBar").style.display = 'flex';
+        document.getElementById("privateMessages").scrollTop = document.getElementById("privateMessages").scrollHeight;
+    }
+}
+function openPrivateTab(targetId) {
+    activePrivateTarget = targetId;
+    document.getElementById("tabPrivate").style.display = 'inline-block';
+    if(isAdmin) {
+        document.getElementById("privateBar").style.display = 'flex';
+        document.getElementById("privateSelect").value = targetId;
+    }
+    switchTab('private');
+}
+function onPrivateSelect() { var v = document.getElementById("privateSelect").value; if(v) conn.invoke("AdminStartPrivate", v); }
+function endPrivateChat() { if(activePrivateTarget) conn.invoke("EndPrivate", activePrivateTarget); }
+async function login() {
+    var ok = await conn.invoke("Login", document.getElementById("password").value);
+    if(!ok) { alert("Wrong password!"); return; }
+    isAdmin = true;
+    document.getElementById("loginbox").style.display = "none";
+    document.getElementById("clearAllBtn").style.display = "block";
+    document.getElementById("tabPrivate").style.display = 'inline-block';
+    fetchVisitors();
+}
+async function fetchVisitors() { var r = await fetch("/api/visitors"); renderVisitors(await r.json()); }
+function renderVisitors(v) {
+    allVisitors = v || [];
+    var l = document.getElementById("visitorList");
+    if(!allVisitors.length) { l.innerHTML = '<div style="color:#555;font-size:.8rem;padding:20px;text-align:center">No visitors</div>'; return; }
+    var h = "", sel = document.getElementById("privateSelect");
+    sel.innerHTML = '<option value="">-- Select --</option>';
+    allVisitors.forEach(function(v) {
+        var ip = v.lastIp || v.firstIp || "Unknown", name = v.nickname || v.deviceId, on = v.online, loc = v.locationInfo || "";
+        h += '<div class="card"><span class="dot ' + (on ? 'on' : 'off') + '"></span><span class="devname">' + name + '</span>';
+        if(isAdmin) { h += '<div class="actions">'; if(on && v.deviceId !== myDeviceId) h += '<button onclick="conn.invoke(\'AdminStartPrivate\',\'' + v.deviceId + '\')">Private Chat</button>'; h += '<button class="danger" onclick="conn.invoke(\'DeleteVisitor\',\'' + v.deviceId + '\')">Delete</button></div>'; }
+        h += '<span class="ip">IP: ' + ip + '</span><br>';
+        if(loc) h += '<span class="loc">📍 ' + loc + '</span><br>';
+        if(v.lat && v.lng) h += '<span class="geo">GPS: ' + Number(v.lat).toFixed(4) + ', ' + Number(v.lng).toFixed(4) + '</span><br>';
+        h += '<span class="time">' + new Date(v.lastSeen).toLocaleTimeString() + '</span></div>';
+        if(isAdmin && on && v.deviceId !== myDeviceId) sel.innerHTML += '<option value="' + v.deviceId + '">' + name + '</option>';
+    });
+    l.innerHTML = h;
+}
+setInterval(function() { if(isAdmin) fetchVisitors(); }, 10000);
+function openSidebar() { document.getElementById("sidebar").classList.add("mobile"); document.getElementById("overlay").classList.add("show"); }
+function closeSidebar() { document.getElementById("sidebar").classList.remove("mobile"); document.getElementById("overlay").classList.remove("show"); }
+async function clearAll() { if(!confirm("Clear all visitors?")) return; await conn.invoke("ClearAll"); }
+</script>
+</body>
+</html>
