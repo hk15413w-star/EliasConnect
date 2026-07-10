@@ -119,16 +119,19 @@ var isAdmin = false, myDeviceId = "", currentTab = 'public', activePrivateTarget
 var privateCache = {};
 var allVisitors = [];
 
-// ========== FIREBASE: Load lịch sử ==========
+// ========== FIREBASE: Load lịch sử một lần duy nhất ==========
 function loadMessagesFromFirebase() {
     var cutoff = Date.now() - (2 * 24 * 60 * 60 * 1000);
-    messagesRef.limitToLast(200).on("child_added", function(snapshot) {
-        var msg = snapshot.val();
-        if (msg.Timestamp && new Date(msg.Timestamp).getTime() > cutoff) {
-            addMsgToPanel('public', msg.User, msg.Message, new Date(msg.Timestamp).toLocaleTimeString());
-        } else {
-            snapshot.ref.remove();
-        }
+    messagesRef.limitToLast(200).once("value", function(snapshot) {
+        document.getElementById("publicMessages").innerHTML = ''; // Xóa panel hiện tại để tránh trùng với History
+        snapshot.forEach(function(child) {
+            var msg = child.val();
+            if (msg.Timestamp && new Date(msg.Timestamp).getTime() > cutoff) {
+                addMsgToPanel('public', msg.User, msg.Message, new Date(msg.Timestamp).toLocaleTimeString());
+            } else {
+                child.ref.remove(); // Xóa tin nhắn quá hạn khỏi Firebase
+            }
+        });
     });
 }
 
@@ -144,7 +147,7 @@ function saveMessageToFirebase(user, message) {
 // ========== SIGNALR EVENTS ==========
 conn.start().then(function() {
     console.log("SignalR connected");
-    loadMessagesFromFirebase();
+    loadMessagesFromFirebase(); // Load lịch sử sau khi kết nối SignalR
     if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(async function(p) {
             var info = "";
@@ -166,9 +169,11 @@ conn.on("Init", function(ip, did) {
 
 conn.on("Msg", function(u, dn, m, t) {
     addMsgToPanel('public', u, m, t);
-    saveMessageToFirebase(u, m);
+    saveMessageToFirebase(u, m); // Chỉ lưu, không cần load lại vì đã hiển thị rồi
 });
-conn.on("History", function(h) { if(h) h.forEach(function(m) { addMsgToPanel('public', m.User, m.Message, new Date(m.Timestamp).toLocaleTimeString()); }); });
+conn.on("History", function(h) {
+    // Không làm gì vì chúng ta dùng Firebase để load lịch sử
+});
 conn.on("AdminData", function(v) { allVisitors = v; renderVisitors(v); });
 conn.on("PrivateOpened", function(targetId, history) {
     openPrivateTab(targetId);
