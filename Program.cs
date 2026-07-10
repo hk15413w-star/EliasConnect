@@ -202,7 +202,7 @@ public class VisitorTracker
     private bool _loaded = false;
     private readonly SemaphoreSlim _loadLock = new(1, 1);
 
-    private const string JSONBIN_API_KEY = "YOUR_MASTER_KEY_HERE"; // ← PHẢI THAY
+    private const string JSONBIN_API_KEY = "$2a$10$dBBbLzVKaPdkHKXbjEOKCee/P.qSpSMYkOMc8lIJqnsI.I8kjy0By";
     private const string JSONBIN_BIN_ID = "6a507856f5f4af5e297ae4be";
 
     public VisitorTracker(IHttpClientFactory hf) => _hf = hf;
@@ -259,7 +259,12 @@ public class VisitorTracker
         return did != null && _d.TryGetValue(did, out var dv) ? dv : null;
     }
 
-    public string? GetOnlineConnectionId(string did) => _c2d.FirstOrDefault(x => x.Value == did).Key;
+    public string? GetOnlineConnectionId(string did)
+    {
+        var kvp = _c2d.FirstOrDefault(x => x.Value == did);
+        return kvp.Key ?? null;
+    }
+
     public bool IsAdmin(string cid) => GetByConnection(cid)?.IsAdmin ?? false;
     public void SetAdmin(string cid, bool a) { var d = GetByConnection(cid); if (d != null) d.IsAdmin = a; }
 
@@ -296,7 +301,11 @@ public class VisitorTracker
     public void StartPrivateSession(string aDev, string vDev) { _sessions[aDev] = vDev; }
     public void EndPrivateSession(string aDev) { _sessions.TryRemove(aDev, out _); }
     public string? GetPrivateTarget(string aDev) { _sessions.TryGetValue(aDev, out var v); return v; }
-    public string? GetPrivateAdmin(string vDev) => _sessions.FirstOrDefault(x => x.Value == vDev).Key;
+    public string? GetPrivateAdmin(string vDev)
+    {
+        var kvp = _sessions.FirstOrDefault(x => x.Value == vDev);
+        return kvp.Key ?? null;
+    }
     public void ClearAll() { _d.Clear(); _c2d.Clear(); }
 
     public void DeleteDevice(string did)
@@ -326,33 +335,42 @@ public class VisitorTracker
     {
         try
         {
-            if (JSONBIN_API_KEY == "YOUR_MASTER_KEY_HERE") { Console.WriteLine("[SAVE] ERROR: API Key missing"); return false; }
             List<ChatMsg> toSave; lock (_l) { toSave = _msg.Where(m => m.Save).ToList(); }
             var json = JsonSerializer.Serialize(new { messages = toSave });
             var client = _hf.CreateClient();
             client.DefaultRequestHeaders.Add("X-Master-Key", JSONBIN_API_KEY);
             var content = new StringContent(json, Encoding.UTF8, "application/json");
             var response = await client.PutAsync($"https://api.jsonbin.io/v3/b/{JSONBIN_BIN_ID}", content);
-            if (response.IsSuccessStatusCode) Console.WriteLine($"[SAVE] {toSave.Count} messages saved");
-            else Console.WriteLine($"[SAVE] FAILED: {response.StatusCode}");
+            if (response.IsSuccessStatusCode)
+                Console.WriteLine($"[SAVE] {toSave.Count} messages saved");
+            else
+                Console.WriteLine($"[SAVE] FAILED: {response.StatusCode}");
             return response.IsSuccessStatusCode;
         }
-        catch (Exception ex) { Console.WriteLine($"[SAVE] Error: {ex.Message}"); return false; }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[SAVE] Error: {ex.Message}");
+            return false;
+        }
     }
 
     public async Task<bool> LoadFromCloudAsync()
     {
         try
         {
-            if (JSONBIN_API_KEY == "YOUR_MASTER_KEY_HERE") { Console.WriteLine("[LOAD] ERROR: API Key missing"); return false; }
             var client = _hf.CreateClient();
             client.DefaultRequestHeaders.Add("X-Master-Key", JSONBIN_API_KEY);
             var response = await client.GetAsync($"https://api.jsonbin.io/v3/b/{JSONBIN_BIN_ID}/latest");
-            if (!response.IsSuccessStatusCode) { Console.WriteLine($"[LOAD] FAILED: {response.StatusCode}"); return false; }
+            if (!response.IsSuccessStatusCode)
+            {
+                Console.WriteLine($"[LOAD] FAILED: {response.StatusCode}");
+                return false;
+            }
             var r = await response.Content.ReadAsStringAsync();
             using var doc = JsonDocument.Parse(r);
             if (!doc.RootElement.TryGetProperty("record", out var record) ||
-                !record.TryGetProperty("messages", out var messagesElement)) return false;
+                !record.TryGetProperty("messages", out var messagesElement))
+                return false;
 
             var messages = messagesElement.Deserialize<List<ChatMsg>>();
             if (messages != null && messages.Count > 0)
@@ -363,7 +381,11 @@ public class VisitorTracker
             else Console.WriteLine("[LOAD] No messages found");
             return true;
         }
-        catch (Exception ex) { Console.WriteLine($"[LOAD] Error: {ex.Message}"); return false; }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[LOAD] Error: {ex.Message}");
+            return false;
+        }
     }
 }
 
