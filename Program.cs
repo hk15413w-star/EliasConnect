@@ -206,8 +206,8 @@ public class VisitorTracker
         dev.LastIp = ip; dev.LastSeen = DateTime.Now; dev.Online = true; dev.UserAgent = ua;
         _c2d[cid] = did;
 
-        // Luôn lấy vị trí từ IP nếu chưa có thông tin vị trí (LocationInfo rỗng)
-        if (string.IsNullOrEmpty(dev.LocationInfo) && ip != "127.0.0.1" && ip != "0.0.0.0")
+        // Luôn gọi IP geolocation nếu chưa có tọa độ GPS (Lat == 0)
+        if (dev.Lat == 0 && ip != "127.0.0.1" && ip != "0.0.0.0")
         {
             try
             {
