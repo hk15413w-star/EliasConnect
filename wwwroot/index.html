@@ -106,9 +106,46 @@ var conn = new signalR.HubConnectionBuilder().withUrl("/chat").build();
 var isAdmin = false, myDeviceId = "", currentTab = 'public', activePrivateTarget = null;
 var privateCache = {};
 var allVisitors = [];
+var STORAGE_KEY = 'elias_chat_messages';
 
+// ========== LOCAL STORAGE ==========
+function getStoredMessages() {
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; } catch(e) { return []; }
+}
+function saveMessagesToStorage() {
+    var messages = [];
+    var panels = document.querySelectorAll('#publicMessages .msg');
+    panels.forEach(function(el) {
+        var userEl = el.querySelector('.uname');
+        var timeEl = el.querySelector('.time');
+        var textEl = el.querySelector('.text');
+        if (userEl && textEl) {
+            messages.push({
+                User: userEl.textContent,
+                Message: textEl.textContent,
+                Timestamp: new Date().toISOString()
+            });
+        }
+    });
+    if (messages.length > 500) messages = messages.slice(-500);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
+}
+function loadStoredMessages() {
+    var stored = getStoredMessages();
+    // Xóa tin nhắn quá 2 ngày
+    var cutoff = Date.now() - (2 * 24 * 60 * 60 * 1000);
+    stored = stored.filter(function(m) { return new Date(m.Timestamp).getTime() > cutoff; });
+    stored.forEach(function(m) {
+        addMsgToPanel('public', m.User, m.Message, new Date(m.Timestamp).toLocaleTimeString());
+    });
+    // Cập nhật lại storage sau khi xóa
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
+}
+
+// ========== SIGNALR ==========
 conn.start().then(function() {
     console.log("SignalR connected");
+    loadStoredMessages();
     if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(async function(p) {
             var info = "";
@@ -128,7 +165,10 @@ conn.on("Init", function(ip, did) {
     myDeviceId = did;
 });
 
-conn.on("Msg", function(u, dn, m, t) { addMsgToPanel('public', u, m, t); });
+conn.on("Msg", function(u, dn, m, t) {
+    addMsgToPanel('public', u, m, t);
+    if (document.getElementById("saveMsg").checked) saveMessagesToStorage();
+});
 conn.on("History", function(h) { if(h) h.forEach(function(m) { addMsgToPanel('public', m.User, m.Message, new Date(m.Timestamp).toLocaleTimeString()); }); });
 conn.on("AdminData", function(v) { allVisitors = v; renderVisitors(v); });
 conn.on("PrivateOpened", function(targetId, history) {
