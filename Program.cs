@@ -75,14 +75,15 @@ public class ChatHub : Hub
         await base.OnDisconnectedAsync(ex);
     }
 
-    public async Task SendMsg(string name, string msg, bool save, string senderDeviceId)
+    public async Task SendMsg(string name, string msg, bool save, string senderDeviceId, string firebaseKey)
     {
         var d = _t.GetByConnection(Context.ConnectionId);
         var dn = d?.DisplayName ?? "Unknown";
         var adm = d?.IsAdmin ?? false;
         var fn = adm ? $"[ADMIN] {name}" : name;
         _t.AddMessage(fn, dn, msg, save);
-        await Clients.All.SendAsync("Msg", fn, dn, msg, DateTime.Now.ToString("HH:mm"), senderDeviceId);
+        // Gửi kèm firebaseKey để client gán vào tin nhắn vừa hiển thị
+        await Clients.All.SendAsync("Msg", fn, dn, msg, DateTime.Now.ToString("HH:mm"), senderDeviceId, firebaseKey);
     }
 
     public Task<bool> Login(string pw)
@@ -206,7 +207,6 @@ public class VisitorTracker
         dev.LastIp = ip; dev.LastSeen = DateTime.Now; dev.Online = true; dev.UserAgent = ua;
         _c2d[cid] = did;
 
-        // Luôn lấy vị trí từ IP nếu chưa có tọa độ GPS
         if (dev.Lat == 0 && ip != "127.0.0.1" && ip != "0.0.0.0")
         {
             try

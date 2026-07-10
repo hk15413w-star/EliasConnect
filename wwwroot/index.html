@@ -40,7 +40,8 @@
         .chat-panel{position:absolute;top:0;left:0;width:100%;height:100%;overflow-y:auto;padding:16px;display:none}
         .chat-panel.active{display:block}
         .msg{margin-bottom:10px;animation:fadeIn .3s;position:relative; display:flex; align-items: flex-start; gap: 8px;}
-        .msg .delete-btn{background:none; border:none; color:#ff4444; cursor:pointer; font-size:1.2rem; padding:0 4px; line-height:1; -webkit-tap-highlight-color: transparent; }
+        .msg .delete-btn{opacity:0; background:none; border:none; color:#ff4444; cursor:pointer; font-size:1.2rem; padding:0 4px; transition:0.2s; line-height:1; -webkit-tap-highlight-color: transparent; }
+        .msg:hover .delete-btn{opacity:1}
         @keyframes fadeIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
         .msg .uname{font-weight:bold;font-size:.8rem}
         .msg .uname.admin{color:#ffaa00}.msg .uname.normal{color:#50cd32}
@@ -144,7 +145,6 @@ var isAdmin = false, myDeviceId = "", currentTab = 'public', activePrivateTarget
 var privateCache = {};
 var allVisitors = [];
 
-// === POPUP VỊ TRÍ ===
 function requestLocationPermission() {
     document.getElementById('locationPopup').style.display = 'none';
     showSaveInfoPopup();
@@ -164,8 +164,6 @@ function closeLocationPopup() {
     document.getElementById('locationPopup').style.display = 'none';
     showSaveInfoPopup();
 }
-
-// === POPUP LƯU TIN NHẮN ===
 function showSaveInfoPopup() {
     var popup = document.getElementById('saveInfoPopup');
     if (popup) {
@@ -173,11 +171,8 @@ function showSaveInfoPopup() {
         setTimeout(function(){ popup.style.display = 'none'; }, 10000);
     }
 }
-function closeInfoPopup() {
-    document.getElementById('saveInfoPopup').style.display = 'none';
-}
+function closeInfoPopup() { document.getElementById('saveInfoPopup').style.display = 'none'; }
 
-// === FIREBASE ===
 function loadMessagesFromFirebase() {
     var cutoff = Date.now() - (2 * 24 * 60 * 60 * 1000);
     messagesRef.limitToLast(200).once("value", function(snapshot) {
@@ -192,21 +187,20 @@ function loadMessagesFromFirebase() {
         });
     });
 }
-function saveMessageToFirebase(user, message) {
-    if (!document.getElementById("saveMsg").checked) return;
+function saveMessageToFirebase(user, message, callback) {
+    if (!document.getElementById("saveMsg").checked) { if(callback) callback(null); return; }
     var newRef = messagesRef.push();
     newRef.set({
         User: user,
         Message: message,
         Timestamp: new Date().toISOString(),
         SenderDeviceId: myDeviceId
+    }, function() {
+        if (callback) callback(newRef.key);
     });
 }
-function deleteMessageFromFirebase(firebaseKey) {
-    messagesRef.child(firebaseKey).remove();
-}
+function deleteMessageFromFirebase(firebaseKey) { messagesRef.child(firebaseKey).remove(); }
 
-// === SIGNALR ===
 conn.start().then(function() {
     console.log("SignalR connected");
     loadMessagesFromFirebase();
@@ -217,9 +211,8 @@ conn.on("Init", function(ip, did) {
     document.getElementById("mydevice").textContent = did || "Unknown";
     myDeviceId = did;
 });
-conn.on("Msg", function(u, dn, m, t, deviceId) {
-    addMsgToPanel('public', u, m, t, deviceId);
-    saveMessageToFirebase(u, m);
+conn.on("Msg", function(u, dn, m, t, deviceId, firebaseKey) {
+    addMsgToPanelWithKey('public', firebaseKey, u, m, t, deviceId);
 });
 conn.on("History", function(h) {});
 conn.on("MessageDeleted", function(firebaseKey) {
@@ -262,7 +255,6 @@ function addMsgToPanelWithKey(panelType, firebaseKey, user, msg, time, senderDev
     if (senderDeviceId) div.setAttribute("data-sender-deviceid", senderDeviceId);
     
     var isAdminMsg = user.indexOf('[ADMIN]') === 0;
-    // Admin có thể xóa bất kỳ tin nhắn nào, visitor chỉ xóa được tin của chính mình
     var canDelete = isAdmin || (myDeviceId && senderDeviceId && myDeviceId === senderDeviceId);
     var deleteBtnHTML = '';
     if (canDelete && firebaseKey) {
@@ -290,79 +282,3 @@ function deleteMessage(firebaseKey) {
     }
     if (!confirm("Xóa tin nhắn này?")) return;
     deleteMessageFromFirebase(firebaseKey);
-    if (el) el.remove();
-    conn.invoke("DeleteMessage", firebaseKey);
-}
-
-function sendMsg() {
-    var m = document.getElementById("msgInput").value.trim();
-    if(!m) return;
-    var save = document.getElementById("saveMsg").checked;
-    if(currentTab === 'private' && activePrivateTarget) {
-        if(isAdmin) conn.invoke("AdminSendPrivate", activePrivateTarget, m);
-        else conn.invoke("VisitorSendPrivate", m);
-    } else {
-        var n = document.getElementById("nameInput").value || "Guest";
-        conn.invoke("SendMsg", n, m, save, myDeviceId);
-    }
-    document.getElementById("msgInput").value = '';
-}
-function switchTab(tab) {
-    currentTab = tab;
-    document.getElementById("tabPublic").classList.toggle("active", tab === 'public');
-    document.getElementById("tabPrivate").classList.toggle("active", tab === 'private');
-    document.getElementById("publicMessages").classList.toggle("active", tab === 'public');
-    document.getElementById("privateMessages").classList.toggle("active", tab === 'private');
-    if(tab === 'public') {
-        document.getElementById("privateBar").style.display = 'none';
-    } else {
-        if(isAdmin) document.getElementById("privateBar").style.display = 'flex';
-        document.getElementById("privateMessages").scrollTop = document.getElementById("privateMessages").scrollHeight;
-    }
-}
-function openPrivateTab(targetId) {
-    activePrivateTarget = targetId;
-    document.getElementById("tabPrivate").style.display = 'inline-block';
-    if(isAdmin) {
-        document.getElementById("privateBar").style.display = 'flex';
-        document.getElementById("privateSelect").value = targetId;
-    }
-    switchTab('private');
-}
-function onPrivateSelect() { var v = document.getElementById("privateSelect").value; if(v) conn.invoke("AdminStartPrivate", v); }
-function endPrivateChat() { if(activePrivateTarget) conn.invoke("EndPrivate", activePrivateTarget); }
-async function login() {
-    var ok = await conn.invoke("Login", document.getElementById("password").value);
-    if(!ok) { alert("Wrong password!"); return; }
-    isAdmin = true;
-    document.getElementById("loginbox").style.display = "none";
-    document.getElementById("clearAllBtn").style.display = "block";
-    document.getElementById("tabPrivate").style.display = 'inline-block';
-    fetchVisitors();
-}
-async function fetchVisitors() { var r = await fetch("/api/visitors"); renderVisitors(await r.json()); }
-function renderVisitors(v) {
-    allVisitors = v || [];
-    var l = document.getElementById("visitorList");
-    if(!allVisitors.length) { l.innerHTML = '<div style="color:#555;font-size:.8rem;padding:20px;text-align:center">No visitors</div>'; return; }
-    var h = "", sel = document.getElementById("privateSelect");
-    sel.innerHTML = '<option value="">-- Select --</option>';
-    allVisitors.forEach(function(v) {
-        var ip = v.lastIp || v.firstIp || "Unknown", name = v.nickname || v.deviceId, on = v.online, loc = v.locationInfo || "";
-        h += '<div class="card"><span class="dot ' + (on ? 'on' : 'off') + '"></span><span class="devname">' + name + '</span>';
-        if(isAdmin) { h += '<div class="actions">'; if(on && v.deviceId !== myDeviceId) h += '<button onclick="conn.invoke(\'AdminStartPrivate\',\'' + v.deviceId + '\')">Private Chat</button>'; h += '<button class="danger" onclick="conn.invoke(\'DeleteVisitor\',\'' + v.deviceId + '\')">Delete</button></div>'; }
-        h += '<span class="ip">IP: ' + ip + '</span><br>';
-        if(loc) h += '<span class="loc">📍 ' + loc + '</span><br>';
-        if(v.lat && v.lng) h += '<span class="geo">GPS: ' + Number(v.lat).toFixed(4) + ', ' + Number(v.lng).toFixed(4) + '</span><br>';
-        h += '<span class="time">' + new Date(v.lastSeen).toLocaleTimeString() + '</span></div>';
-        if(isAdmin && on && v.deviceId !== myDeviceId) sel.innerHTML += '<option value="' + v.deviceId + '">' + name + '</option>';
-    });
-    l.innerHTML = h;
-}
-setInterval(function() { if(isAdmin) fetchVisitors(); }, 10000);
-function openSidebar() { document.getElementById("sidebar").classList.add("mobile"); document.getElementById("overlay").classList.add("show"); }
-function closeSidebar() { document.getElementById("sidebar").classList.remove("mobile"); document.getElementById("overlay").classList.remove("show"); }
-async function clearAll() { if(!confirm("Clear all visitors?")) return; await conn.invoke("ClearAll"); }
-</script>
-</body>
-</html>
