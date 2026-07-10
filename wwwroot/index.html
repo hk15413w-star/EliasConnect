@@ -132,6 +132,7 @@
 </div>
 
 <script>
+// Firebase
 const firebaseConfig = {
     databaseURL: "https://elias-chat-f5434-default-rtdb.asia-southeast1.firebasedatabase.app/"
 };
@@ -139,6 +140,7 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 const messagesRef = db.ref("messages");
 
+// SignalR
 var conn = new signalR.HubConnectionBuilder().withUrl("/chat").build();
 var isAdmin = false, myDeviceId = "", currentTab = 'public', activePrivateTarget = null;
 var privateCache = {};
