@@ -82,7 +82,6 @@ public class ChatHub : Hub
         var adm = d?.IsAdmin ?? false;
         var fn = adm ? $"[ADMIN] {name}" : name;
         _t.AddMessage(fn, dn, msg, save);
-        // Gửi kèm firebaseKey để client gán vào tin nhắn vừa hiển thị
         await Clients.All.SendAsync("Msg", fn, dn, msg, DateTime.Now.ToString("HH:mm"), senderDeviceId, firebaseKey);
     }
 
@@ -207,7 +206,8 @@ public class VisitorTracker
         dev.LastIp = ip; dev.LastSeen = DateTime.Now; dev.Online = true; dev.UserAgent = ua;
         _c2d[cid] = did;
 
-        if (dev.Lat == 0 && ip != "127.0.0.1" && ip != "0.0.0.0")
+        // Luôn lấy vị trí từ IP nếu chưa có thông tin vị trí (LocationInfo rỗng)
+        if (string.IsNullOrEmpty(dev.LocationInfo) && ip != "127.0.0.1" && ip != "0.0.0.0")
         {
             try
             {
@@ -223,9 +223,14 @@ public class VisitorTracker
                     if (!string.IsNullOrEmpty(data.regionName)) parts.Add(data.regionName);
                     if (!string.IsNullOrEmpty(data.city)) parts.Add(data.city);
                     dev.LocationInfo = string.Join(", ", parts);
+                    Console.WriteLine($"[GEO] {ip} -> {dev.LocationInfo}");
+                }
+                else
+                {
+                    Console.WriteLine($"[GEO] API returned no country for {ip}");
                 }
             }
-            catch { }
+            catch (Exception ex) { Console.WriteLine($"[GEO] Error: {ex.Message}"); }
         }
     }
 
