@@ -199,18 +199,24 @@ function loadPrivateHistory(visitorDeviceId) {
     privateRef.child(visitorDeviceId).limitToLast(100).once("value", function(snapshot) {
         snapshot.forEach(function(child) {
             var msg = child.val();
-            addMsgToPanel('private', msg.sender, msg.message, msg.time);
+            // Hiển thị với firebaseKey để có thể xóa
+            addMsgToPanelWithKey('private', child.key, msg.sender, msg.message, msg.time, msg.senderDeviceId);
         });
     });
 }
-function savePrivateMessageToFirebase(visitorDeviceId, sender, message, callback) {
+function savePrivateMessageToFirebase(visitorDeviceId, sender, message, senderDeviceId, callback) {
+    if (!document.getElementById("saveMsg").checked) { if(callback) callback(null); return; }
     var newRef = privateRef.child(visitorDeviceId).push();
     newRef.set({
         sender: sender,
         message: message,
         time: new Date().toLocaleTimeString(),
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        senderDeviceId: senderDeviceId || myDeviceId
     }, function() { if (callback) callback(newRef.key); });
+}
+function deletePrivateMessageFromFirebase(visitorDeviceId, firebaseKey) {
+    privateRef.child(visitorDeviceId).child(firebaseKey).remove();
 }
 
 // === SignalR ===
@@ -219,7 +225,6 @@ conn.start().then(function() {
     if (!isAdmin) {
         activePrivateTarget = "ADMIN";
         document.getElementById("tabPrivate").style.display = 'inline-block';
-        // Load lịch sử của visitor với admin
         loadPrivateHistory(myDeviceId);
     }
 });
@@ -243,8 +248,8 @@ conn.on("PrivateOpened", function(targetId) {
     openPrivateTab(targetId);
 });
 conn.on("PrivateMsg", function(targetId, sender, msg, time) {
-    // Chỉ admin mới nhận real-time từ SignalR (visitor tự thêm UI khi gửi)
-    if (isAdmin && currentTab === 'private' && activePrivateTarget === targetId) {
+    if (currentTab === 'private' && activePrivateTarget === targetId) {
+        // Thêm vào UI với firebaseKey rỗng (vì real-time không có key, sẽ không xóa được qua UI này, nhưng có thể xóa khi load lại)
         addMsgToPanel('private', sender, msg, time);
     }
 });
@@ -264,7 +269,9 @@ function addMsgToPanelWithKey(panelType, firebaseKey, user, msg, time, senderDev
     var canDelete = isAdmin || (myDeviceId && senderDeviceId && myDeviceId === senderDeviceId);
     var deleteBtnHTML = '';
     if (canDelete && firebaseKey) {
-        deleteBtnHTML = `<button class="delete-btn" title="Xóa tin nhắn" onclick="deleteMessage('${firebaseKey}')">✕</button>`;
+        // Với private, cần biết visitorDeviceId để xóa đúng path
+        var targetForDelete = panelType === 'private' ? activePrivateTarget : '';
+        deleteBtnHTML = `<button class="delete-btn" title="Xóa tin nhắn" onclick="deleteMessage('${firebaseKey}', '${targetForDelete}')">✕</button>`;
     }
     
     div.innerHTML = `
@@ -278,7 +285,7 @@ function addMsgToPanelWithKey(panelType, firebaseKey, user, msg, time, senderDev
     panel.appendChild(div);
     panel.scrollTop = panel.scrollHeight;
 }
-function deleteMessage(firebaseKey) {
+function deleteMessage(firebaseKey, visitorDeviceId) {
     if (!firebaseKey) return;
     var el = document.querySelector(`[data-firebase-key="${firebaseKey}"]`);
     var senderDeviceId = el ? el.getAttribute("data-sender-deviceid") : null;
@@ -287,12 +294,18 @@ function deleteMessage(firebaseKey) {
         return;
     }
     if (!confirm("Xóa tin nhắn này?")) return;
-    deleteMessageFromFirebase(firebaseKey);
+    if (visitorDeviceId) {
+        // Private message
+        deletePrivateMessageFromFirebase(visitorDeviceId, firebaseKey);
+    } else {
+        // Public message
+        deleteMessageFromFirebase(firebaseKey);
+    }
     if (el) el.remove();
     conn.invoke("DeleteMessage", firebaseKey);
 }
 
-// ========== GỬI TIN NHẮN (ĐÃ SỬA) ==========
+// ========== GỬI TIN NHẮN ==========
 function sendMsg() {
     var m = document.getElementById("msgInput").value.trim();
     if(!m) return;
@@ -300,12 +313,15 @@ function sendMsg() {
     if(currentTab === 'private' && activePrivateTarget) {
         var user = document.getElementById("nameInput").value || "Guest";
         if (isAdmin) {
-            savePrivateMessageToFirebase(activePrivateTarget, "[ADMIN] " + user, m);
+            savePrivateMessageToFirebase(activePrivateTarget, "[ADMIN] " + user, m, myDeviceId, function(firebaseKey) {
+                // Gửi kèm firebaseKey qua SignalR? Hiện tại SignalR không gửi key, ta có thể bỏ qua hoặc thêm vào nếu muốn xóa real-time.
+                // Tạm thời chỉ lưu, việc xóa sẽ dựa vào key từ Firebase khi load lại.
+            });
             conn.invoke("AdminSendPrivate", activePrivateTarget, m);
         } else {
-            // Visitor gửi đến admin
-            savePrivateMessageToFirebase(myDeviceId, user, m);
-            // Hiển thị ngay cho visitor
+            savePrivateMessageToFirebase(myDeviceId, user, m, myDeviceId, function(firebaseKey) {
+                // Tương tự
+            });
             addMsgToPanel('private', user, m, new Date().toLocaleTimeString());
             conn.invoke("VisitorSendToAdmin", m);
         }
@@ -339,7 +355,6 @@ function openPrivateTab(targetId) {
         document.getElementById("privateSelect").value = targetId;
     }
     switchTab('private');
-    // Visitor luôn load lịch sử của chính mình
     if (!isAdmin) {
         loadPrivateHistory(myDeviceId);
     } else {
@@ -357,8 +372,7 @@ async function login() {
     document.getElementById("clearAllBtn").style.display = "block";
     document.getElementById("tabPrivate").style.display = 'inline-block';
     fetchVisitors();
-    loadMessagesFromFirebase(); // để hiện nút xóa
-    // Lấy danh sách visitor đã chat
+    loadMessagesFromFirebase();
     privateRef.once("value", function(snapshot) {
         snapshot.forEach(function(child) {
             var visitorId = child.key;
