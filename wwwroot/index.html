@@ -295,7 +295,6 @@ function sendMsg() {
         else conn.invoke("VisitorSendPrivate", m);
     } else {
         var n = document.getElementById("nameInput").value || "Guest";
-        // Lưu Firebase trước, rồi gửi kèm firebaseKey qua SignalR
         saveMessageToFirebase(n, m, function(firebaseKey) {
             conn.invoke("SendMsg", n, m, save, myDeviceId, firebaseKey || "");
         });

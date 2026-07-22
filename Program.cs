@@ -12,8 +12,21 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Configuration;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// ===== SỬA LỖI INOTIFY TRÊN RENDER =====
+// Tắt ReloadOnChange cho tất cả file cấu hình để không tạo FileSystemWatcher
+foreach (var source in builder.Configuration.Sources)
+{
+    if (source is FileConfigurationSource fileSource)
+    {
+        fileSource.ReloadOnChange = false;
+    }
+}
+// =====================================
+
 builder.Services.AddSignalR();
 builder.Services.AddSingleton<VisitorTracker>();
 builder.Services.AddHttpClient();
@@ -27,6 +40,7 @@ app.MapGet("/api/visitors", (VisitorTracker t) => t.GetAll());
 
 app.Run();
 
+// ==================== CHAT HUB ====================
 public class ChatHub : Hub
 {
     private readonly VisitorTracker _t;
