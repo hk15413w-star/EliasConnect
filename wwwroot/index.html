@@ -60,7 +60,6 @@
         .overlay{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.7);z-index:99}
         .overlay.show{display:block}
         .sidebar.mobile{display:flex!important;position:fixed;top:0;left:0;height:100%;z-index:100;width:300px}
-
         .location-popup-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);z-index:200;display:flex;justify-content:center;align-items:center;}
         .location-popup{background:#1a1a28;border:1px solid #50cd32;border-radius:16px;padding:30px;text-align:center;max-width:350px;animation:popIn 0.3s ease}
         @keyframes popIn{from{transform:scale(0.8);opacity:0}to{transform:scale(1);opacity:1}}
@@ -68,7 +67,6 @@
         .location-popup p{color:#ccc;font-size:0.9rem;margin-bottom:20px}
         .location-popup button{background:#50cd32;color:#000;border:none;padding:10px 24px;border-radius:8px;font-weight:bold;cursor:pointer;margin:0 5px}
         .location-popup .skip-btn{background:transparent;color:#666;border:1px solid #333}
-
         .info-popup{position:fixed;top:20px;right:20px;background:#1a1a28;border:1px solid #50cd32;border-radius:8px;padding:16px 20px;z-index:200;max-width:300px;box-shadow:0 4px 15px rgba(0,0,0,0.5);animation:slideIn 0.3s ease}
         @keyframes slideIn{from{transform:translateX(100%)}to{transform:translateX(0)}}
         .info-popup p{color:#ddd;font-size:.8rem;margin-bottom:8px}
@@ -77,7 +75,7 @@
     </style>
 </head>
 <body>
-
+<!-- Popups -->
 <div class="location-popup-overlay" id="locationPopup">
     <div class="location-popup">
         <h3>📍 Cho phép vị trí</h3>
@@ -86,7 +84,6 @@
         <button class="skip-btn" onclick="closeLocationPopup()">Để sau</button>
     </div>
 </div>
-
 <div id="saveInfoPopup" class="info-popup" style="display:none">
     <p>💡 <b>Lưu ý:</b> Bạn có thể lưu tin nhắn trong 2 ngày bằng cách tick vào ô "Lưu 2 ngày". Hãy chỉ dùng khi cần thiết để tránh đầy bộ nhớ.</p>
     <button onclick="closeInfoPopup()">Đã hiểu</button>
@@ -113,7 +110,7 @@
     </div>
     <div class="tabs">
         <div class="tab active" id="tabPublic" onclick="switchTab('public')">Public</div>
-        <div class="tab" id="tabPrivate" style="display:none" onclick="switchTab('private')">Admin Chat</div>
+        <div class="tab" id="tabPrivate" onclick="switchTab('private')">Admin Chat</div>
     </div>
     <div class="private-bar" id="privateBar" style="display:none">
         <span style="color:#aaa;font-size:.8rem">Chat with:</span>
@@ -133,18 +130,20 @@
 </div>
 
 <script>
+// Firebase config
 const firebaseConfig = {
     databaseURL: "https://elias-chat-f5434-default-rtdb.asia-southeast1.firebasedatabase.app/"
 };
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 const messagesRef = db.ref("messages");
+const privateRef = db.ref("private");
 
 var conn = new signalR.HubConnectionBuilder().withUrl("/chat").build();
 var isAdmin = false, myDeviceId = "", currentTab = 'public', activePrivateTarget = null;
-var privateCache = {};
 var allVisitors = [];
 
+// === Popups ===
 function requestLocationPermission() {
     document.getElementById('locationPopup').style.display = 'none';
     showSaveInfoPopup();
@@ -160,19 +159,14 @@ function requestLocationPermission() {
         }, function() {});
     }
 }
-function closeLocationPopup() {
-    document.getElementById('locationPopup').style.display = 'none';
-    showSaveInfoPopup();
-}
+function closeLocationPopup() { document.getElementById('locationPopup').style.display = 'none'; showSaveInfoPopup(); }
 function showSaveInfoPopup() {
     var popup = document.getElementById('saveInfoPopup');
-    if (popup) {
-        popup.style.display = 'block';
-        setTimeout(function(){ popup.style.display = 'none'; }, 10000);
-    }
+    if (popup) { popup.style.display = 'block'; setTimeout(function(){ popup.style.display = 'none'; }, 10000); }
 }
 function closeInfoPopup() { document.getElementById('saveInfoPopup').style.display = 'none'; }
 
+// === Firebase Public ===
 function loadMessagesFromFirebase() {
     var cutoff = Date.now() - (2 * 24 * 60 * 60 * 1000);
     messagesRef.limitToLast(200).once("value", function(snapshot) {
@@ -195,22 +189,59 @@ function saveMessageToFirebase(user, message, callback) {
         Message: message,
         Timestamp: new Date().toISOString(),
         SenderDeviceId: myDeviceId
-    }, function() {
-        if (callback) callback(newRef.key);
-    });
+    }, function() { if (callback) callback(newRef.key); });
 }
 function deleteMessageFromFirebase(firebaseKey) { messagesRef.child(firebaseKey).remove(); }
 
+// === Firebase Private ===
+function loadPrivateHistory(visitorDeviceId) {
+    document.getElementById("privateMessages").innerHTML = '';
+    privateRef.child(visitorDeviceId).limitToLast(100).once("value", function(snapshot) {
+        snapshot.forEach(function(child) {
+            var msg = child.val();
+            addMsgToPanel('private', msg.sender, msg.message, msg.time);
+        });
+    });
+}
+function savePrivateMessageToFirebase(visitorDeviceId, sender, message, callback) {
+    var newRef = privateRef.child(visitorDeviceId).push();
+    newRef.set({
+        sender: sender,
+        message: message,
+        time: new Date().toLocaleTimeString(),
+        timestamp: new Date().toISOString()
+    }, function() { if (callback) callback(newRef.key); });
+}
+// Lắng nghe real-time cho admin với visitor cụ thể
+function listenPrivateChat(visitorDeviceId) {
+    privateRef.child(visitorDeviceId).limitToLast(1).on("child_added", function(snapshot) {
+        var msg = snapshot.val();
+        if (currentTab === 'private' && activePrivateTarget === visitorDeviceId) {
+            addMsgToPanel('private', msg.sender, msg.message, msg.time);
+        }
+        if (isAdmin && visitorDeviceId !== myDeviceId) {
+            updatePrivateSelect(visitorDeviceId);
+        }
+    });
+}
+
+// === SignalR ===
 conn.start().then(function() {
-    console.log("SignalR connected");
     loadMessagesFromFirebase();
-}).catch(function(err) { console.error(err); });
+    if (!isAdmin) {
+        // Visitor: tab private mặc định chat với admin
+        activePrivateTarget = "ADMIN";
+        document.getElementById("tabPrivate").style.display = 'inline-block';
+        listenPrivateChat(myDeviceId); // lắng nghe chính mình
+    }
+});
 
 conn.on("Init", function(ip, did) {
     document.getElementById("myip").textContent = ip || "Unknown";
     document.getElementById("mydevice").textContent = did || "Unknown";
     myDeviceId = did;
 });
+
 conn.on("Msg", function(u, dn, m, t, deviceId, firebaseKey) {
     addMsgToPanelWithKey('public', firebaseKey, u, m, t, deviceId);
 });
@@ -220,30 +251,17 @@ conn.on("MessageDeleted", function(firebaseKey) {
     if (el) el.remove();
 });
 conn.on("AdminData", function(v) { allVisitors = v; renderVisitors(v); });
-conn.on("PrivateOpened", function(targetId, history) {
+conn.on("PrivateOpened", function(targetId) {
     openPrivateTab(targetId);
-    document.getElementById("privateMessages").innerHTML = '';
-    if(history) history.forEach(function(m) { addMsgToPanel('private', m.Sender, m.Message, new Date(m.Timestamp).toLocaleTimeString()); });
-});
-conn.on("AdminStartedChat", function(adminName) {
-    if(isAdmin) return;
-    document.getElementById("tabPrivate").style.display = 'inline-block';
-    activePrivateTarget = adminName;
-    switchTab('private');
+    loadPrivateHistory(targetId);
 });
 conn.on("PrivateMsg", function(targetId, sender, msg, time) {
-    if(!privateCache[targetId]) privateCache[targetId] = [];
-    privateCache[targetId].push({sender: sender, msg: msg, time: time});
-    if(activePrivateTarget === targetId || (activePrivateTarget === sender && !isAdmin)) {
+    if (currentTab === 'private' && activePrivateTarget === targetId) {
         addMsgToPanel('private', sender, msg, time);
     }
 });
-conn.on("PrivateEnded", function() {
-    activePrivateTarget = null;
-    document.getElementById("privateBar").style.display = 'none';
-    if(currentTab === 'private') switchTab('public');
-});
 
+// === UI Functions ===
 function addMsgToPanel(panelType, user, msg, time, deviceId) {
     addMsgToPanelWithKey(panelType, null, user, msg, time, deviceId);
 }
@@ -291,8 +309,18 @@ function sendMsg() {
     if(!m) return;
     var save = document.getElementById("saveMsg").checked;
     if(currentTab === 'private' && activePrivateTarget) {
-        if(isAdmin) conn.invoke("AdminSendPrivate", activePrivateTarget, m);
-        else conn.invoke("VisitorSendPrivate", m);
+        var user = document.getElementById("nameInput").value || "Guest";
+        if (isAdmin) {
+            // Admin gửi đến visitor
+            savePrivateMessageToFirebase(activePrivateTarget, "[ADMIN] " + user, m, function() {
+                conn.invoke("AdminSendPrivate", activePrivateTarget, m);
+            });
+        } else {
+            // Visitor gửi đến admin
+            savePrivateMessageToFirebase(myDeviceId, user, m, function() {
+                conn.invoke("VisitorSendToAdmin", m);
+            });
+        }
     } else {
         var n = document.getElementById("nameInput").value || "Guest";
         saveMessageToFirebase(n, m, function(firebaseKey) {
@@ -310,7 +338,7 @@ function switchTab(tab) {
     if(tab === 'public') {
         document.getElementById("privateBar").style.display = 'none';
     } else {
-        if(isAdmin) document.getElementById("privateBar").style.display = 'flex';
+        if (isAdmin) document.getElementById("privateBar").style.display = 'flex';
         document.getElementById("privateMessages").scrollTop = document.getElementById("privateMessages").scrollHeight;
     }
 }
@@ -322,9 +350,12 @@ function openPrivateTab(targetId) {
         document.getElementById("privateSelect").value = targetId;
     }
     switchTab('private');
+    loadPrivateHistory(targetId);
+    listenPrivateChat(targetId);
 }
-function onPrivateSelect() { var v = document.getElementById("privateSelect").value; if(v) conn.invoke("AdminStartPrivate", v); }
-function endPrivateChat() { if(activePrivateTarget) conn.invoke("EndPrivate", activePrivateTarget); }
+function onPrivateSelect() { var v = document.getElementById("privateSelect").value; if(v) openPrivateTab(v); }
+function endPrivateChat() { switchTab('public'); }
+
 async function login() {
     var ok = await conn.invoke("Login", document.getElementById("password").value);
     if(!ok) { alert("Wrong password!"); return; }
@@ -333,9 +364,16 @@ async function login() {
     document.getElementById("clearAllBtn").style.display = "block";
     document.getElementById("tabPrivate").style.display = 'inline-block';
     fetchVisitors();
-    // Render lại toàn bộ tin nhắn để hiển thị nút xóa cho admin
-    loadMessagesFromFirebase();
+    loadMessagesFromFirebase(); // để hiện nút xóa
+    // Lấy danh sách visitor đã từng chat private
+    privateRef.once("value", function(snapshot) {
+        snapshot.forEach(function(child) {
+            var visitorId = child.key;
+            if (visitorId !== myDeviceId) updatePrivateSelect(visitorId);
+        });
+    });
 }
+
 async function fetchVisitors() { var r = await fetch("/api/visitors"); renderVisitors(await r.json()); }
 function renderVisitors(v) {
     allVisitors = v || [];
@@ -346,7 +384,7 @@ function renderVisitors(v) {
     allVisitors.forEach(function(v) {
         var ip = v.lastIp || v.firstIp || "Unknown", name = v.nickname || v.deviceId, on = v.online, loc = v.locationInfo || "";
         h += '<div class="card"><span class="dot ' + (on ? 'on' : 'off') + '"></span><span class="devname">' + name + '</span>';
-        if(isAdmin) { h += '<div class="actions">'; if(on && v.deviceId !== myDeviceId) h += '<button onclick="conn.invoke(\'AdminStartPrivate\',\'' + v.deviceId + '\')">Private Chat</button>'; h += '<button class="danger" onclick="conn.invoke(\'DeleteVisitor\',\'' + v.deviceId + '\')">Delete</button></div>'; }
+        if(isAdmin) { h += '<div class="actions">'; if(on && v.deviceId !== myDeviceId) h += '<button onclick="openPrivateTab(\'' + v.deviceId + '\')">Private Chat</button>'; h += '<button class="danger" onclick="conn.invoke(\'DeleteVisitor\',\'' + v.deviceId + '\')">Delete</button></div>'; }
         h += '<span class="ip">IP: ' + ip + '</span><br>';
         if(loc) h += '<span class="loc">📍 ' + loc + '</span><br>';
         if(v.lat && v.lng) h += '<span class="geo">GPS: ' + Number(v.lat).toFixed(4) + ', ' + Number(v.lng).toFixed(4) + '</span><br>';
@@ -354,6 +392,12 @@ function renderVisitors(v) {
         if(isAdmin && on && v.deviceId !== myDeviceId) sel.innerHTML += '<option value="' + v.deviceId + '">' + name + '</option>';
     });
     l.innerHTML = h;
+}
+function updatePrivateSelect(visitorId) {
+    var sel = document.getElementById("privateSelect");
+    if (!sel.querySelector('option[value="' + visitorId + '"]')) {
+        sel.innerHTML += '<option value="' + visitorId + '">' + visitorId + '</option>';
+    }
 }
 setInterval(function() { if(isAdmin) fetchVisitors(); }, 10000);
 function openSidebar() { document.getElementById("sidebar").classList.add("mobile"); document.getElementById("overlay").classList.add("show"); }

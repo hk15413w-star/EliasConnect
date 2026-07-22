@@ -12,21 +12,8 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.AspNetCore.SignalR;
-using Microsoft.Extensions.Configuration;
 
 var builder = WebApplication.CreateBuilder(args);
-
-// ===== SỬA LỖI INOTIFY TRÊN RENDER =====
-// Tắt ReloadOnChange cho tất cả file cấu hình để không tạo FileSystemWatcher
-foreach (var source in builder.Configuration.Sources)
-{
-    if (source is FileConfigurationSource fileSource)
-    {
-        fileSource.ReloadOnChange = false;
-    }
-}
-// =====================================
-
 builder.Services.AddSignalR();
 builder.Services.AddSingleton<VisitorTracker>();
 builder.Services.AddHttpClient();
@@ -40,7 +27,6 @@ app.MapGet("/api/visitors", (VisitorTracker t) => t.GetAll());
 
 app.Run();
 
-// ==================== CHAT HUB ====================
 public class ChatHub : Hub
 {
     private readonly VisitorTracker _t;
@@ -89,6 +75,7 @@ public class ChatHub : Hub
         await base.OnDisconnectedAsync(ex);
     }
 
+    // Public chat
     public async Task SendMsg(string name, string msg, bool save, string senderDeviceId, string firebaseKey)
     {
         var d = _t.GetByConnection(Context.ConnectionId);
@@ -99,6 +86,7 @@ public class ChatHub : Hub
         await Clients.All.SendAsync("Msg", fn, dn, msg, DateTime.Now.ToString("HH:mm"), senderDeviceId, firebaseKey);
     }
 
+    // Admin
     public Task<bool> Login(string pw)
     {
         if (pw != "elias2026") return Task.FromResult(false);
@@ -133,66 +121,37 @@ public class ChatHub : Hub
         await Clients.Caller.SendAsync("AdminData", _t.GetAll());
     }
 
-    public async Task AdminStartPrivate(string targetDeviceId)
-    {
-        if (!_t.IsAdmin(Context.ConnectionId)) return;
-        var adm = _t.GetByConnection(Context.ConnectionId);
-        if (adm == null) return;
-        _t.StartPrivateSession(adm.DeviceId, targetDeviceId);
-        var tc = _t.GetOnlineConnectionId(targetDeviceId);
-        if (tc != null)
-            await Clients.Client(tc).SendAsync("AdminStartedChat", adm.DisplayName);
-        await Clients.Caller.SendAsync("PrivateOpened", targetDeviceId,
-            _t.GetPrivateMessages(adm.DeviceId, targetDeviceId));
-    }
-
-    public async Task AdminSendPrivate(string tid, string msg)
-    {
-        var s = _t.GetByConnection(Context.ConnectionId);
-        if (s == null || !s.IsAdmin) return;
-        var sn = $"[ADMIN] {s.DisplayName}";
-        _t.AddPrivateMessage(s.DeviceId, tid, sn, msg);
-        await Clients.Caller.SendAsync("PrivateMsg", tid, sn, msg, DateTime.Now.ToString("HH:mm"));
-        var tc = _t.GetOnlineConnectionId(tid);
-        if (tc != null)
-            await Clients.Client(tc).SendAsync("PrivateMsg", s.DeviceId, sn, msg, DateTime.Now.ToString("HH:mm"));
-    }
-
-    public async Task VisitorSendPrivate(string msg)
+    // Private chat: visitor gửi cho admin (admin có thể offline)
+    public async Task VisitorSendToAdmin(string message)
     {
         var v = _t.GetByConnection(Context.ConnectionId);
         if (v == null || v.IsAdmin) return;
-        var aid = _t.GetPrivateAdmin(v.DeviceId);
-        if (aid == null) return;
-        var sn = v.DisplayName;
-        _t.AddPrivateMessage(aid, v.DeviceId, sn, msg);
-        await Clients.Caller.SendAsync("PrivateMsg", aid, sn, msg, DateTime.Now.ToString("HH:mm"));
-        var ac = _t.GetOnlineConnectionId(aid);
-        if (ac != null)
-            await Clients.Client(ac).SendAsync("PrivateMsg", v.DeviceId, sn, msg, DateTime.Now.ToString("HH:mm"));
+        var senderName = v.DisplayName;
+        var adminConnId = _t.GetOnlineAdminConnectionId();
+        if (adminConnId != null)
+            await Clients.Client(adminConnId).SendAsync("PrivateMsg", v.DeviceId, senderName, message, DateTime.Now.ToString("HH:mm"));
+        // Gửi lại cho chính visitor
+        await Clients.Caller.SendAsync("PrivateMsg", v.DeviceId, senderName, message, DateTime.Now.ToString("HH:mm"));
     }
 
-    public async Task EndPrivate(string tid)
+    // Admin gửi cho visitor (visitor có thể offline)
+    public async Task AdminSendPrivate(string visitorDeviceId, string message)
     {
-        var d = _t.GetByConnection(Context.ConnectionId);
-        if (d == null) return;
-        if (d.IsAdmin)
-        {
-            _t.EndPrivateSession(d.DeviceId);
-            var tc = _t.GetOnlineConnectionId(tid);
-            if (tc != null) await Clients.Client(tc).SendAsync("PrivateEnded");
-        }
-        else
-        {
-            var aid = _t.GetPrivateAdmin(d.DeviceId);
-            if (aid != null)
-            {
-                _t.EndPrivateSession(aid);
-                var ac = _t.GetOnlineConnectionId(aid);
-                if (ac != null) await Clients.Client(ac).SendAsync("PrivateEnded", d.DeviceId);
-            }
-        }
-        await Clients.Caller.SendAsync("PrivateEnded");
+        var s = _t.GetByConnection(Context.ConnectionId);
+        if (s == null || !s.IsAdmin) return;
+        var senderName = $"[ADMIN] {s.DisplayName}";
+        var targetConn = _t.GetOnlineConnectionId(visitorDeviceId);
+        if (targetConn != null)
+            await Clients.Client(targetConn).SendAsync("PrivateMsg", visitorDeviceId, senderName, message, DateTime.Now.ToString("HH:mm"));
+        // Gửi lại cho admin
+        await Clients.Caller.SendAsync("PrivateMsg", visitorDeviceId, senderName, message, DateTime.Now.ToString("HH:mm"));
+    }
+
+    // Mở tab private (chỉ để client gọi load lịch sử)
+    public async Task AdminStartPrivate(string targetDeviceId)
+    {
+        if (!_t.IsAdmin(Context.ConnectionId)) return;
+        await Clients.Caller.SendAsync("PrivateOpened", targetDeviceId);
     }
 
     public async Task DeleteMessage(string firebaseKey)
@@ -206,11 +165,9 @@ public class VisitorTracker
     private readonly ConcurrentDictionary<string, Device> _d = new();
     private readonly ConcurrentDictionary<string, string> _c2d = new();
     private readonly ConcurrentDictionary<string, string> _nick = new();
-    private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, List<PrivateMsg>>> _priv = new();
     private readonly List<ChatMsg> _msg = new();
     private readonly object _l = new();
     private readonly IHttpClientFactory _hf;
-    private readonly ConcurrentDictionary<string, string> _sessions = new();
 
     public VisitorTracker(IHttpClientFactory hf) => _hf = hf;
 
@@ -220,37 +177,26 @@ public class VisitorTracker
         dev.LastIp = ip; dev.LastSeen = DateTime.Now; dev.Online = true; dev.UserAgent = ua;
         _c2d[cid] = did;
 
-        // Luôn lấy vị trí từ IP cho mọi thiết bị
-        if (ip != "127.0.0.1" && ip != "0.0.0.0")
+        // IP geolocation nếu chưa có thông tin
+        if (string.IsNullOrEmpty(dev.LocationInfo) && ip != "127.0.0.1" && ip != "0.0.0.0")
         {
-            await FetchIpLocation(dev, ip);
-        }
-    }
-
-    private async Task FetchIpLocation(Device dev, string ip)
-    {
-        try
-        {
-            var c = _hf.CreateClient(); c.DefaultRequestHeaders.Add("User-Agent", "EliasConnect/1.0");
-            var r = await c.GetStringAsync($"https://ip-api.com/json/{ip}?fields=country,regionName,city,lat,lon");
-            var data = JsonSerializer.Deserialize<IpApiResponse>(r);
-            if (data != null && !string.IsNullOrEmpty(data.country))
+            try
             {
-                dev.Lat = data.lat;
-                dev.Lng = data.lon;
-                var parts = new List<string>();
-                if (!string.IsNullOrEmpty(data.country)) parts.Add(data.country);
-                if (!string.IsNullOrEmpty(data.regionName)) parts.Add(data.regionName);
-                if (!string.IsNullOrEmpty(data.city)) parts.Add(data.city);
-                dev.LocationInfo = string.Join(", ", parts);
-                Console.WriteLine($"[GEO] {ip} -> {dev.LocationInfo}");
+                var c = _hf.CreateClient(); c.DefaultRequestHeaders.Add("User-Agent", "EliasConnect/1.0");
+                var r = await c.GetStringAsync($"https://ip-api.com/json/{ip}?fields=country,regionName,city,lat,lon");
+                var data = JsonSerializer.Deserialize<IpApiResponse>(r);
+                if (data != null && !string.IsNullOrEmpty(data.country))
+                {
+                    dev.Lat = data.lat; dev.Lng = data.lon;
+                    var parts = new List<string>();
+                    if (!string.IsNullOrEmpty(data.country)) parts.Add(data.country);
+                    if (!string.IsNullOrEmpty(data.regionName)) parts.Add(data.regionName);
+                    if (!string.IsNullOrEmpty(data.city)) parts.Add(data.city);
+                    dev.LocationInfo = string.Join(", ", parts);
+                }
             }
-            else
-            {
-                Console.WriteLine($"[GEO] API returned no country for {ip}");
-            }
+            catch { }
         }
-        catch (Exception ex) { Console.WriteLine($"[GEO] Error: {ex.Message}"); }
     }
 
     public void Disconnect(string cid)
@@ -259,12 +205,7 @@ public class VisitorTracker
             dev.Online = false;
     }
 
-    public Device? GetByConnection(string cid)
-    {
-        _c2d.TryGetValue(cid, out var did);
-        return did != null && _d.TryGetValue(did, out var dv) ? dv : null;
-    }
-
+    public Device? GetByConnection(string cid) { _c2d.TryGetValue(cid, out var did); return did != null && _d.TryGetValue(did, out var dv) ? dv : null; }
     public string? GetOnlineConnectionId(string did) => _c2d.FirstOrDefault(x => x.Value == did).Key;
     public bool IsAdmin(string cid) => GetByConnection(cid)?.IsAdmin ?? false;
     public void SetAdmin(string cid, bool a) { var d = GetByConnection(cid); if (d != null) d.IsAdmin = a; }
@@ -282,26 +223,12 @@ public class VisitorTracker
         lock (_l) { _msg.Add(msg); if (_msg.Count > 1000) _msg.RemoveAt(0); }
     }
 
-    public void AddPrivateMessage(string aDev, string vDev, string s, string m)
+    // Lấy connection ID của admin đang online (dùng cho real-time private chat)
+    public string? GetOnlineAdminConnectionId()
     {
-        var key = aDev + "|" + vDev;
-        var list = _priv.GetOrAdd(key, _ => new ConcurrentDictionary<string, List<PrivateMsg>>());
-        var msgs = list.GetOrAdd(key, _ => new List<PrivateMsg>());
-        lock (msgs) { msgs.Add(new PrivateMsg { Sender = s, Message = m, Timestamp = DateTime.Now }); if (msgs.Count > 200) msgs.RemoveAt(0); }
+        return _c2d.FirstOrDefault(x => _d.TryGetValue(x.Value, out var d) && d.IsAdmin && d.Online).Key;
     }
 
-    public List<PrivateMsg> GetPrivateMessages(string aDev, string vDev)
-    {
-        var key = aDev + "|" + vDev;
-        if (_priv.TryGetValue(key, out var list) && list.TryGetValue(key, out var msgs))
-            lock (msgs) return msgs.ToList();
-        return new List<PrivateMsg>();
-    }
-
-    public void StartPrivateSession(string aDev, string vDev) { _sessions[aDev] = vDev; }
-    public void EndPrivateSession(string aDev) { _sessions.TryRemove(aDev, out _); }
-    public string? GetPrivateTarget(string aDev) { _sessions.TryGetValue(aDev, out var v); return v; }
-    public string? GetPrivateAdmin(string vDev) => _sessions.FirstOrDefault(x => x.Value == vDev).Key;
     public void ClearAll() { _d.Clear(); _c2d.Clear(); }
 
     public void DeleteDevice(string did)
@@ -324,5 +251,4 @@ public class VisitorTracker
 
 public class Device { public string DeviceId { get; set; } = ""; public string FirstIp { get; set; } = ""; public string LastIp { get; set; } = ""; public string UserAgent { get; set; } = ""; public double Lat { get; set; } public double Lng { get; set; } public string LocationInfo { get; set; } = ""; public bool Online { get; set; } public bool IsAdmin { get; set; } public DateTime FirstSeen { get; set; } public DateTime LastSeen { get; set; } public string DeviceName => DeviceId; public string Nickname { get; set; } = ""; public string DisplayName => string.IsNullOrEmpty(Nickname) ? DeviceName : Nickname; }
 public class ChatMsg { public string User { get; set; } = ""; public string DeviceName { get; set; } = ""; public string Message { get; set; } = ""; public DateTime Timestamp { get; set; } public bool Save { get; set; } = true; }
-public class PrivateMsg { public string Sender { get; set; } = ""; public string Message { get; set; } = ""; public DateTime Timestamp { get; set; } }
 public class IpApiResponse { public string country { get; set; } = ""; public string regionName { get; set; } = ""; public string city { get; set; } = ""; public double lat { get; set; } public double lon { get; set; } }
