@@ -212,7 +212,6 @@ function savePrivateMessageToFirebase(visitorDeviceId, sender, message, callback
         timestamp: new Date().toISOString()
     }, function() { if (callback) callback(newRef.key); });
 }
-// Không dùng listener để thêm UI
 
 // === SignalR ===
 conn.start().then(function() {
@@ -220,6 +219,8 @@ conn.start().then(function() {
     if (!isAdmin) {
         activePrivateTarget = "ADMIN";
         document.getElementById("tabPrivate").style.display = 'inline-block';
+        // Load lịch sử của visitor với admin
+        loadPrivateHistory(myDeviceId);
     }
 });
 
@@ -240,10 +241,10 @@ conn.on("MessageDeleted", function(firebaseKey) {
 conn.on("AdminData", function(v) { allVisitors = v; renderVisitors(v); });
 conn.on("PrivateOpened", function(targetId) {
     openPrivateTab(targetId);
-    loadPrivateHistory(targetId);
 });
 conn.on("PrivateMsg", function(targetId, sender, msg, time) {
-    if (currentTab === 'private' && activePrivateTarget === targetId) {
+    // Chỉ admin mới nhận real-time từ SignalR (visitor tự thêm UI khi gửi)
+    if (isAdmin && currentTab === 'private' && activePrivateTarget === targetId) {
         addMsgToPanel('private', sender, msg, time);
     }
 });
@@ -302,7 +303,10 @@ function sendMsg() {
             savePrivateMessageToFirebase(activePrivateTarget, "[ADMIN] " + user, m);
             conn.invoke("AdminSendPrivate", activePrivateTarget, m);
         } else {
+            // Visitor gửi đến admin
             savePrivateMessageToFirebase(myDeviceId, user, m);
+            // Hiển thị ngay cho visitor
+            addMsgToPanel('private', user, m, new Date().toLocaleTimeString());
             conn.invoke("VisitorSendToAdmin", m);
         }
     } else {
@@ -335,7 +339,12 @@ function openPrivateTab(targetId) {
         document.getElementById("privateSelect").value = targetId;
     }
     switchTab('private');
-    loadPrivateHistory(targetId);
+    // Visitor luôn load lịch sử của chính mình
+    if (!isAdmin) {
+        loadPrivateHistory(myDeviceId);
+    } else {
+        loadPrivateHistory(targetId);
+    }
 }
 function onPrivateSelect() { var v = document.getElementById("privateSelect").value; if(v) openPrivateTab(v); }
 function endPrivateChat() { switchTab('public'); }
