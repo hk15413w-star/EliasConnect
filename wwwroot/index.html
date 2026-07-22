@@ -75,7 +75,7 @@
     </style>
 </head>
 <body>
-<!-- Popups -->
+<!-- Popups giữ nguyên -->
 <div class="location-popup-overlay" id="locationPopup">
     <div class="location-popup">
         <h3>📍 Cho phép vị trí</h3>
@@ -212,27 +212,14 @@ function savePrivateMessageToFirebase(visitorDeviceId, sender, message, callback
         timestamp: new Date().toISOString()
     }, function() { if (callback) callback(newRef.key); });
 }
-// Lắng nghe real-time cho admin với visitor cụ thể
-function listenPrivateChat(visitorDeviceId) {
-    privateRef.child(visitorDeviceId).limitToLast(1).on("child_added", function(snapshot) {
-        var msg = snapshot.val();
-        if (currentTab === 'private' && activePrivateTarget === visitorDeviceId) {
-            addMsgToPanel('private', msg.sender, msg.message, msg.time);
-        }
-        if (isAdmin && visitorDeviceId !== myDeviceId) {
-            updatePrivateSelect(visitorDeviceId);
-        }
-    });
-}
+// Không dùng listener để thêm UI
 
 // === SignalR ===
 conn.start().then(function() {
     loadMessagesFromFirebase();
     if (!isAdmin) {
-        // Visitor: tab private mặc định chat với admin
         activePrivateTarget = "ADMIN";
         document.getElementById("tabPrivate").style.display = 'inline-block';
-        listenPrivateChat(myDeviceId); // lắng nghe chính mình
     }
 });
 
@@ -304,6 +291,7 @@ function deleteMessage(firebaseKey) {
     conn.invoke("DeleteMessage", firebaseKey);
 }
 
+// ========== GỬI TIN NHẮN (ĐÃ SỬA) ==========
 function sendMsg() {
     var m = document.getElementById("msgInput").value.trim();
     if(!m) return;
@@ -311,15 +299,11 @@ function sendMsg() {
     if(currentTab === 'private' && activePrivateTarget) {
         var user = document.getElementById("nameInput").value || "Guest";
         if (isAdmin) {
-            // Admin gửi đến visitor
-            savePrivateMessageToFirebase(activePrivateTarget, "[ADMIN] " + user, m, function() {
-                conn.invoke("AdminSendPrivate", activePrivateTarget, m);
-            });
+            savePrivateMessageToFirebase(activePrivateTarget, "[ADMIN] " + user, m);
+            conn.invoke("AdminSendPrivate", activePrivateTarget, m);
         } else {
-            // Visitor gửi đến admin
-            savePrivateMessageToFirebase(myDeviceId, user, m, function() {
-                conn.invoke("VisitorSendToAdmin", m);
-            });
+            savePrivateMessageToFirebase(myDeviceId, user, m);
+            conn.invoke("VisitorSendToAdmin", m);
         }
     } else {
         var n = document.getElementById("nameInput").value || "Guest";
@@ -329,6 +313,7 @@ function sendMsg() {
     }
     document.getElementById("msgInput").value = '';
 }
+
 function switchTab(tab) {
     currentTab = tab;
     document.getElementById("tabPublic").classList.toggle("active", tab === 'public');
@@ -351,7 +336,6 @@ function openPrivateTab(targetId) {
     }
     switchTab('private');
     loadPrivateHistory(targetId);
-    listenPrivateChat(targetId);
 }
 function onPrivateSelect() { var v = document.getElementById("privateSelect").value; if(v) openPrivateTab(v); }
 function endPrivateChat() { switchTab('public'); }
@@ -365,7 +349,7 @@ async function login() {
     document.getElementById("tabPrivate").style.display = 'inline-block';
     fetchVisitors();
     loadMessagesFromFirebase(); // để hiện nút xóa
-    // Lấy danh sách visitor đã từng chat private
+    // Lấy danh sách visitor đã chat
     privateRef.once("value", function(snapshot) {
         snapshot.forEach(function(child) {
             var visitorId = child.key;

@@ -121,7 +121,7 @@ public class ChatHub : Hub
         await Clients.Caller.SendAsync("AdminData", _t.GetAll());
     }
 
-    // Private chat: visitor gửi cho admin (admin có thể offline)
+    // Visitor gửi cho admin
     public async Task VisitorSendToAdmin(string message)
     {
         var v = _t.GetByConnection(Context.ConnectionId);
@@ -130,11 +130,10 @@ public class ChatHub : Hub
         var adminConnId = _t.GetOnlineAdminConnectionId();
         if (adminConnId != null)
             await Clients.Client(adminConnId).SendAsync("PrivateMsg", v.DeviceId, senderName, message, DateTime.Now.ToString("HH:mm"));
-        // Gửi lại cho chính visitor
         await Clients.Caller.SendAsync("PrivateMsg", v.DeviceId, senderName, message, DateTime.Now.ToString("HH:mm"));
     }
 
-    // Admin gửi cho visitor (visitor có thể offline)
+    // Admin gửi cho visitor
     public async Task AdminSendPrivate(string visitorDeviceId, string message)
     {
         var s = _t.GetByConnection(Context.ConnectionId);
@@ -143,11 +142,10 @@ public class ChatHub : Hub
         var targetConn = _t.GetOnlineConnectionId(visitorDeviceId);
         if (targetConn != null)
             await Clients.Client(targetConn).SendAsync("PrivateMsg", visitorDeviceId, senderName, message, DateTime.Now.ToString("HH:mm"));
-        // Gửi lại cho admin
         await Clients.Caller.SendAsync("PrivateMsg", visitorDeviceId, senderName, message, DateTime.Now.ToString("HH:mm"));
     }
 
-    // Mở tab private (chỉ để client gọi load lịch sử)
+    // Mở tab private
     public async Task AdminStartPrivate(string targetDeviceId)
     {
         if (!_t.IsAdmin(Context.ConnectionId)) return;
@@ -177,7 +175,6 @@ public class VisitorTracker
         dev.LastIp = ip; dev.LastSeen = DateTime.Now; dev.Online = true; dev.UserAgent = ua;
         _c2d[cid] = did;
 
-        // IP geolocation nếu chưa có thông tin
         if (string.IsNullOrEmpty(dev.LocationInfo) && ip != "127.0.0.1" && ip != "0.0.0.0")
         {
             try
@@ -223,7 +220,6 @@ public class VisitorTracker
         lock (_l) { _msg.Add(msg); if (_msg.Count > 1000) _msg.RemoveAt(0); }
     }
 
-    // Lấy connection ID của admin đang online (dùng cho real-time private chat)
     public string? GetOnlineAdminConnectionId()
     {
         return _c2d.FirstOrDefault(x => _d.TryGetValue(x.Value, out var d) && d.IsAdmin && d.Online).Key;
