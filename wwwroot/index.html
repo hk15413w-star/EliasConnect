@@ -80,7 +80,7 @@
     <div class="location-popup">
         <h3>📍 Cho phép vị trí</h3>
         <p>Trang web hoạt động tốt nhất khi bạn cho phép truy cập vị trí. Chúng tôi chỉ sử dụng để hiển thị thông tin chung.</p>
-        <button onclick="requestLocationPermission()">Đồng ý</button>
+        <button onclick="requestLocationPermission()">Cho phép</button>
         <button class="skip-btn" onclick="closeLocationPopup()">Để sau</button>
     </div>
 </div>
@@ -249,7 +249,14 @@ conn.on("PrivateOpened", function(targetId) {
 });
 conn.on("PrivateMsg", function(targetId, sender, msg, time) {
     if (currentTab === 'private' && activePrivateTarget === targetId) {
-        // Thêm vào UI với firebaseKey rỗng (vì real-time không có key, sẽ không xóa được qua UI này, nhưng có thể xóa khi load lại)
+        // Kiểm tra trùng lặp để không thêm đúp
+        var panel = document.getElementById('privateMessages');
+        var lastMsg = panel.lastElementChild;
+        if (lastMsg) {
+            var lastText = lastMsg.querySelector('.text')?.textContent;
+            var lastSender = lastMsg.querySelector('.uname')?.textContent;
+            if (lastText === msg && lastSender === sender) return;
+        }
         addMsgToPanel('private', sender, msg, time);
     }
 });
@@ -295,17 +302,15 @@ function deleteMessage(firebaseKey, visitorDeviceId) {
     }
     if (!confirm("Xóa tin nhắn này?")) return;
     if (visitorDeviceId) {
-        // Private message
         deletePrivateMessageFromFirebase(visitorDeviceId, firebaseKey);
     } else {
-        // Public message
         deleteMessageFromFirebase(firebaseKey);
     }
     if (el) el.remove();
     conn.invoke("DeleteMessage", firebaseKey);
 }
 
-// ========== GỬI TIN NHẮN ==========
+// ========== GỬI TIN NHẮN (ĐÃ SỬA) ==========
 function sendMsg() {
     var m = document.getElementById("msgInput").value.trim();
     if(!m) return;
@@ -313,16 +318,22 @@ function sendMsg() {
     if(currentTab === 'private' && activePrivateTarget) {
         var user = document.getElementById("nameInput").value || "Guest";
         if (isAdmin) {
-            savePrivateMessageToFirebase(activePrivateTarget, "[ADMIN] " + user, m, myDeviceId, function(firebaseKey) {
-                // Gửi kèm firebaseKey qua SignalR? Hiện tại SignalR không gửi key, ta có thể bỏ qua hoặc thêm vào nếu muốn xóa real-time.
-                // Tạm thời chỉ lưu, việc xóa sẽ dựa vào key từ Firebase khi load lại.
-            });
+            // Admin gửi đến visitor
+            var displayName = "[ADMIN] " + user;
+            // Hiển thị ngay cho admin
+            addMsgToPanel('private', displayName, m, new Date().toLocaleTimeString());
+            // Lưu vào Firebase (nếu tick)
+            savePrivateMessageToFirebase(activePrivateTarget, displayName, m, myDeviceId);
+            // Gửi SignalR đến visitor
             conn.invoke("AdminSendPrivate", activePrivateTarget, m);
         } else {
-            savePrivateMessageToFirebase(myDeviceId, user, m, myDeviceId, function(firebaseKey) {
-                // Tương tự
-            });
-            addMsgToPanel('private', user, m, new Date().toLocaleTimeString());
+            // Visitor gửi đến admin
+            var displayName = user;
+            // Hiển thị ngay cho visitor
+            addMsgToPanel('private', displayName, m, new Date().toLocaleTimeString());
+            // Lưu vào Firebase (nếu tick)
+            savePrivateMessageToFirebase(myDeviceId, displayName, m, myDeviceId);
+            // Gửi SignalR đến admin
             conn.invoke("VisitorSendToAdmin", m);
         }
     } else {
